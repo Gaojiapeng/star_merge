@@ -1,6 +1,6 @@
-import { Simulation, STAR_TYPES, PHYSICS } from './simulation.js?v=3.0.0';
-import { Renderer } from './renderer.js?v=3.0.0';
-import { HoldDrop } from './hold-drop.js?v=3.0.0';
+import { Simulation, STAR_TYPES, PHYSICS } from './simulation.js?v=3.0.1';
+import { Renderer } from './renderer.js?v=3.0.1';
+import { HoldDrop } from './hold-drop.js?v=3.0.1';
 const $=id=>document.getElementById(id),clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const pad=n=>String(Math.floor(n)).padStart(2,'0'),timeText=n=>`${pad(n/60)}:${pad(n%60)}`;
 const massText=n=>n<10?n.toFixed(2):Math.round(n).toLocaleString('en-US');
@@ -75,5 +75,6 @@ function updateUi(){
 let previous=performance.now(),accumulator=0,lastUi=0;
 function frame(now){const dt=Math.min(.1,(now-previous)/1000);previous=now;if(sim.state==='playing'&&mode==='drop')hold.update(dt);else hold.cancel();if(sim.state==='playing'||sim.state==='won'){accumulator+=dt;while(accumulator>=1/60){sim.update(1/60);accumulator-=1/60;}}else accumulator=0;renderer.render(sim.state==='paused'?0:dt);if(now-lastUi>150){lastUi=now;updateUi();}requestAnimationFrame(frame);}
 applySettings();updateUi();requestAnimationFrame(frame);
+
 
 

@@ -8,3 +8,4 @@ export class HoldDrop {
   cancel(){this.id=null;this.age=0;this.repeated=false;}
 }
 
+

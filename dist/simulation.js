@@ -356,6 +356,7 @@ export class Simulation {
     this._removeBody(b.id);
     const merged = this.addBody(kind, type, x, y, mass);
     merged.vx = vx;
+    merged.rotation = a.rotation;
     merged.vy = vy - (kind === 'star' ? 27 : 0);
     merged.mergeGrace = 0.2;
     merged.dropGrace = Math.max(a.dropGrace, b.dropGrace);
@@ -441,10 +442,14 @@ export class Simulation {
     for (const body of this.bodies) {
       if (body.x - body.radius < this.wallLeft) {
         body.x = this.wallLeft + body.radius;
+        const friction=clamp(-(body.vy-body.angularVelocity*body.radius)/3,-Math.abs(body.vx)*.288,Math.abs(body.vx)*.288);
+        body.vy+=friction;body.angularVelocity=clamp(body.angularVelocity-2*friction/body.radius,-3.5,3.5);
         body.vx = Math.abs(body.vx) * 0.2;
       }
       if (body.x + body.radius > this.wallRight) {
         body.x = this.wallRight - body.radius;
+        const friction=clamp(-(body.vy+body.angularVelocity*body.radius)/3,-Math.abs(body.vx)*.288,Math.abs(body.vx)*.288);
+        body.vy+=friction;body.angularVelocity=clamp(body.angularVelocity+2*friction/body.radius,-3.5,3.5);
         body.vx = -Math.abs(body.vx) * 0.2;
       }
       if (body.y + body.radius > this.floor) {
@@ -774,5 +779,6 @@ export class Simulation {
     };
   }
 }
+
 
 

@@ -336,3 +336,7 @@ test('tangential contact creates spin, advances the texture angle and floor fric
  sim.bodies=[a];a.y=sim.floor-a.radius+1;a.vx=80;a.vy=0;a.angularVelocity=0;sim._solveBounds();assert.ok(a.angularVelocity>0);assert.ok(a.vx<80);
 });
 
+
+test('a glancing wall collision transfers tangential momentum into disc rotation',()=>{
+ const {sim}=game();const a=body(sim,'star',0,sim.wallRight-18,300);a.vx=100;a.vy=80;sim._solveBounds();assert.ok(a.angularVelocity<0);assert.ok(a.vy<80);assert.ok(a.vx<0);
+});

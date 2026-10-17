@@ -1,5 +1,5 @@
-import { STAR_TYPES, PHYSICS, gravityAt } from './simulation.js?v=3.0.0';
-import { LensingPass } from './optics.js?v=3.0.0';
+import { STAR_TYPES, PHYSICS, gravityAt } from './simulation.js?v=3.0.1';
+import { LensingPass } from './optics.js?v=3.0.1';
 import { CRITICAL_B } from './vendor/bruneton/geodesic.js';
 const W=700,H=820,TAU=Math.PI*2,clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const palettes=[['#481d24','#8d2e30','#de4938','#ff7950','#ffc18c'],['#583322','#a7552b','#e9923d','#ffc36c','#ffe2a3'],['#655125','#af8537','#e6b952','#ffe194','#fff4ce'],['#59534b','#a7987b','#dbcfad','#fff0cc','#fff9e9'],['#313f66','#6078ab','#a2bddd','#d7edff','#f5fbff'],['#26345f','#435e9e','#799bdd','#accbff','#e5eeff'],['#332754','#655095','#9385cf','#c5b9ff','#f0e8ff']];
@@ -151,6 +151,7 @@ export class Renderer{
     c.globalAlpha=fade;c.globalCompositeOperation='source-over';if(fade>0)this._remnant({id:-1,kind:'bh',x:350,y:410,radius:22,mass:1000000});c.globalAlpha=1;if(t>4){c.font='18px monospace';c.textAlign='center';c.fillStyle='#c5acbf';c.fillText('10⁶ M☉',350,510);}
   }
 }
+
 
 
 
