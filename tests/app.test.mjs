@@ -8,6 +8,9 @@ import { readFile } from 'node:fs/promises';
 class ElementStub {
   constructor(tagName = 'div', attributes = {}) {
     this.tagName = tagName.toUpperCase();
+    if (this.tagName === 'CANVAS') this.getContext = () => new Proxy({}, {
+      get(target,key) { if(key in target)return target[key]; return (...args) => { for(const value of args)if(typeof value==='number')assert.ok(Number.isFinite(value), `finite Canvas argument for ${String(key)}`); }; }
+    });
     this.attributes = { ...attributes };
     this.id = attributes.id;
     this.dataset = {};
@@ -85,7 +88,6 @@ function fixture(html) {
     button.heading.textContent = match[2].match(/<h3>([^<]+)<\/h3>/)?.[1] || '';
     return button;
   });
-  elements.get('sound').span = new ElementStub('span');
   const context = new Proxy({}, {
     get(target, key) {
       if (key in target) return target[key];
@@ -149,100 +151,74 @@ function fixture(html) {
   };
 }
 
-test('real app startup and interaction state work against the shipped HTML contract', async t => {
+test('minimal game starts, responds to mobile input, pauses, and reaches its ending', async t => {
   const html = await readFile(new URL('../dist/index.html', import.meta.url), 'utf8');
   const env = fixture(html);
   try {
-    await import('../dist/app.js');
+    const { sim, renderer } = await import('../dist/app.js');
     const get = env.get;
-
-    await t.test('startup renders a ready game and all six lab controls', () => {
-      env.tick(0.2);
-      assert.equal(get('ready-overlay').hidden, false);
-      assert.equal(get('field-status').textContent, '等待点火');
-      assert.equal(get('score').textContent, '000000');
-      assert.equal(env.scenarios.length, 6);
-      assert.equal(get('pause').disabled, true);
+    await t.test('only the game and its options remain', () => {
+      env.tick(.2);
+      assert.equal(env.dialogs.length,1);
+      assert.equal(env.scenarios.length,0);
+      assert.ok(!html.includes('lab-open')&&!html.includes('guide-open')&&!html.includes('inspector'));
+      assert.equal(get('ready-overlay').hidden,false);
+      assert.equal(get('score').textContent,'0');
+      assert.equal(sim.winningMass,2000);
+      assert.ok(renderer.materials.size>0,'stars are rasterized from material particles');
     });
-
-    await t.test('Space on a focused control is not captured as a game command', () => {
-      const event = env.key(get('settings-open'));
-      env.tick(0.2);
-      assert.equal(event.defaultPrevented, undefined);
-      assert.equal(get('ready-overlay').hidden, false);
-      assert.equal(get('settings-dialog').open, false, 'the harness does not synthesize native button clicks');
+    await t.test('Space on a focused button preserves native button behavior', () => {
+      const event=env.key(get('settings-open'));
+      assert.equal(event.defaultPrevented,undefined);
+      assert.equal(sim.state,'ready');
     });
-
-    await t.test('start, drop, pause and resume update the actual UI', () => {
-      get('start').click();
-      assert.equal(get('ready-overlay').hidden, true);
-      assert.equal(get('field-status').textContent, '引力场稳定运行');
-      const originalCount = get('body-count').textContent;
-      env.key(get('settings-open'));
-      env.tick(0.2);
-      assert.equal(get('body-count').textContent, originalCount, 'focused-button Space does not drop a star');
-      env.key(get('universe'));
-      env.tick(0.2);
-      assert.notEqual(get('body-count').textContent, originalCount);
-      get('pause').click();
-      assert.equal(get('field-status').textContent, '时间已暂停');
-      const pausedTime = get('timer').textContent;
-      env.tick(2);
-      assert.equal(get('timer').textContent, pausedTime);
-      get('state-action').click();
-      assert.equal(get('field-status').textContent, '引力场稳定运行');
+    await t.test('drag release drops one star at the new horizontal position', () => {
+      get('start').click();env.tick(.5);const before=sim.bodies.length;
+      get('universe').dispatch('pointerdown',{pointerId:7,button:0,clientX:120,clientY:300});
+      get('universe').dispatch('pointermove',{pointerId:7,clientX:570,clientY:300});
+      assert.equal(sim.bodies.length,before,'pressing does not immediately drop');
+      get('universe').dispatch('pointerup',{pointerId:7,clientX:570,clientY:300});
+      assert.equal(sim.bodies.length,before+1);assert.ok(sim.bodies.at(-1).x>550);
+      get('pause').click();const snapshot=sim.getSnapshot(),visualTime=renderer.time;
+      env.tick(1);assert.deepEqual(sim.getSnapshot(),snapshot);assert.equal(renderer.time,visualTime);
+      get('state-action').click();assert.equal(sim.state,'playing');
     });
-
-    await t.test('dialogs restore the prior running or paused state correctly', () => {
-      get('guide-open').click();
-      assert.equal(get('guide-dialog').open, true);
-      assert.equal(get('field-status').textContent, '时间已暂停');
-      get('guide-dialog').closeButton.click();
-      assert.equal(get('field-status').textContent, '引力场稳定运行');
-      get('pause').click();
-      get('guide-open').click();
-      get('guide-dialog').closeButton.click();
-      assert.equal(get('field-status').textContent, '时间已暂停');
+    await t.test('cancelled pointers and inspection never drop an accidental star', () => {
+      env.tick(.5);const before=sim.bodies.length;
+      get('universe').dispatch('pointerdown',{pointerId:8,button:0,clientX:120,clientY:300});
+      get('universe').dispatch('pointercancel');
+      get('universe').dispatch('pointerup',{pointerId:8,clientX:120,clientY:300});
+      assert.equal(sim.bodies.length,before);
+      get('mode').click();const body=sim.bodies[0];
+      get('universe').dispatch('pointerdown',{pointerId:9,button:0,clientX:body.x,clientY:body.y});
+      assert.equal(get('body-info').hidden,false);assert.ok(get('info-layers').children.length>0);
+      get('mode').click();assert.equal(get('body-info').hidden,true);
+    });
+    await t.test('options restore prior pause state and allow lensing to be disabled', () => {
+      get('settings-open').click();assert.equal(sim.state,'paused');
+      get('setting-lensing').onchange({target:{checked:false}});assert.equal(renderer.showLensing,false);
+      get('settings-close').click();assert.equal(sim.state,'playing');
+      get('pause').click();get('settings-open').click();get('settings-close').click();assert.equal(sim.state,'paused');
       get('pause').click();
     });
-
-    await t.test('lab finale advances to its ending without contaminating the record', () => {
-      const record = get('best').textContent;
-      get('lab-open').click();
-      env.scenarios.find(button => button.dataset.scenario === 'finale').click();
-      assert.equal(get('lab-dialog').open, false);
-      assert.equal(get('lab-tag').hidden, false);
-      assert.equal(get('arena-title').textContent, '天体物理实验室');
-      env.tick(2);
-      assert.equal(get('cinema-caption').hidden, false);
-      assert.ok(Number(get('score').textContent) > 0);
-      const countAtWin = get('body-count').textContent;
-      env.tick(2);
-      assert.notEqual(get('body-count').textContent, countAtWin, 'won-state physics continues consuming/spawning stars');
-      env.tick(8);
-      assert.equal(get('state-overlay').hidden, false);
-      assert.equal(get('state-eyebrow').textContent, 'A GALAXY IS BORN');
-      assert.equal(get('best').textContent, record);
-      assert.equal(env.storage.has('stellar-forge-best'), false);
-      get('lab-exit').click();
-      assert.equal(get('ready-overlay').hidden, false);
-      assert.equal(get('lab-tag').hidden, true);
-      assert.equal(get('score').textContent, '000000');
+    await t.test('the 2000-mass ending keeps advancing the physical and visual clocks', () => {
+      sim.bodies=[];sim.addBody('bh',6,350,600,2000);sim.addBody('star',3,490,600);env.tick(.2);
+      assert.equal(sim.state,'won');assert.equal(get('cinema-caption').hidden,false);
+      const elapsed=sim.time;env.tick(13);assert.equal(sim.time,elapsed);
+      assert.ok(sim.finaleTime>12&&renderer.isCinematicDone);
+      assert.equal(get('state-overlay').hidden,false);
+      get('state-action').click();assert.equal(sim.state,'playing');assert.equal(sim.score,0);
     });
-
-    await t.test('reset from settings returns to a clean ready game', () => {
-      get('start').click();
-      env.tick(1.2);
-      get('settings-open').click();
-      get('restart').click();
-      assert.equal(get('settings-dialog').open, false);
-      assert.equal(get('ready-overlay').hidden, false);
-      assert.equal(get('field-status').textContent, '等待点火');
-      assert.equal(get('timer').textContent, '00:00');
-      assert.equal(get('score').textContent, '000000');
-      assert.equal(get('pause').disabled, true);
+    await t.test('ejecta stay visible longer, feel gravity, cool and remain budgeted', () => {
+      renderer.event({kind:'supernova',x:350,y:400,radius:300,power:1});
+      const shock=renderer.effects.find(e=>e.kind==='shock');assert.equal(shock.duration,14);
+      env.tick(3);assert.ok(renderer.particles.length>0);
+      assert.ok(renderer.effects.some(e=>e.kind==='shock'));
+      assert.ok(renderer.particles.length<=renderer.particleLimit);
+      for(let i=0;i<20;i++)renderer.event({kind:'supernova',x:350,y:400,radius:300});
+      assert.ok(renderer.particles.length<=renderer.particleLimit);
+      get('setting-quality').onchange({target:{checked:false}});env.tick(.1);
+      assert.ok(renderer.particles.length<=1100);
     });
-  } finally {
-    env.restore();
-  }
+  } finally { env.restore(); }
 });

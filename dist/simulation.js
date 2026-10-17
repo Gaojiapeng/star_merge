@@ -46,8 +46,21 @@ export const PHYSICS = Object.freeze({
   neutronStarLimit: 2.3,
   chandrasekharMass: 1.4,
   whiteDwarfAge: 300,
-  winningMass: 40,
+  winningMass: 2000,
+  supernovaTimeScale: 5,
+  blackHoleAccretionScale: 1 / 20,
+  gravityConstant: 200000,
+  gravityAccelerationLimit: 1400,
 });
+
+/** Plummer-softened Newtonian field, shared by bodies and material tracers. */
+export function gravityAt(dx, dy, mass, softening = 24) {
+  const r2 = dx * dx + dy * dy + softening * softening;
+  const factor = PHYSICS.gravityConstant * mass / (r2 * Math.sqrt(r2));
+  const ax = dx * factor, ay = dy * factor;
+  const limit = Math.min(1, PHYSICS.gravityAccelerationLimit / (Math.hypot(ax, ay) || 1));
+  return { x: ax * limit, y: ay * limit };
+}
 
 export const calculateTimeBonus = seconds => Math.round(6000 / (1 + Math.max(0, seconds) / 180));
 
@@ -82,14 +95,14 @@ function starRadius(mass) {
 
 function remnantRadius(kind, mass) {
   if (kind === 'bh') return Math.min(61, 15 + Math.sqrt(mass) * 2.5);
-  if (kind === 'ns') return 13 + mass * 1.4;
+  if (kind === 'ns') return 15.5;
   return Math.max(12, 22 - mass * 4);
 }
 
 function lifetime(mass) {
-  if (mass >= 25) return 7;
-  if (mass >= 16) return 18;
-  if (mass >= 8) return 27;
+  if (mass >= 25) return 7 * PHYSICS.supernovaTimeScale;
+  if (mass >= 16) return 18 * PHYSICS.supernovaTimeScale;
+  if (mass >= 8) return 27 * PHYSICS.supernovaTimeScale;
   return PHYSICS.whiteDwarfAge;
 }
 
@@ -123,10 +136,9 @@ export class Simulation {
     this._rng = this.seed;
     this._id = 0;
     this.bodies = [];
+    this.shocks = [];
     this.time = 0;
     this.score = 0;
-    this.isLab = false;
-    this.labName = null;
     this.nextType = 0;
     this._lastDrop = -1;
     this._lastMerge = -10;
@@ -138,7 +150,7 @@ export class Simulation {
     this.winTime = null;
     this.finaleTime = 0;
     this._finaleSpawn = 0;
-    this.stats = { merges: 0, supernovae: 0, accreted: 0, timeBonus: 0, bestMass: 0, starsAbsorbed: 0 };
+    this.stats = { merges: 0, supernovae: 0, accreted: 0, ejected: 0, timeBonus: 0, bestMass: 0, starsAbsorbed: 0 };
   }
 
   restart() {
@@ -147,9 +159,10 @@ export class Simulation {
     // A static, deterministic attract screen. start() resets this preview.
     [
       [0, 84, 776], [1, 133, 770], [2, 199, 760], [0, 249, 776],
-      [3, 308, 752], [1, 368, 772], [2, 426, 760], [5, 544, 727],
+      [3, 308, 752], [1, 368, 772], [2, 426, 760],
       [0, 167, 712], [1, 275, 678], [0, 393, 706], [0, 636, 775],
     ].forEach(([type, x, y]) => this.addBody('star', type, x, y));
+    this.addBody('bh', 6, 548, 744, 18);
     this.stats.bestMass = 0;
     return this;
   }
@@ -248,6 +261,7 @@ export class Simulation {
       body.rotation += body.angularVelocity * dt;
     }
     this._applyGravity(dt);
+    this._updateShocks(dt);
     for (const body of this.bodies) {
       body.vy += 430 * dt;
       body.vx *= Math.pow(0.997, dt * 60);
@@ -272,19 +286,23 @@ export class Simulation {
   }
 
   _applyGravity(dt) {
-    for (const source of this.bodies) {
-      if (source.kind === 'star') continue;
-      const range = source.gravityRadius = source.kind === 'bh' ? 210 + Math.sqrt(source.mass) * 19 : source.kind === 'ns' ? 190 : 140;
-      const strength = source.kind === 'bh' ? 680 + Math.sqrt(source.mass) * 160 : source.kind === 'ns' ? 510 : 230;
+    // Only remnants source the additional field. Each pair is solved once;
+    // opposite acceleration preserves pair momentum even under the safety cap.
+    const compact = this.bodies.filter(body => body.kind !== 'star');
+    for (const source of compact) {
+      source.gravityRadius = source.kind === 'bh' ? 240 + Math.sqrt(source.mass) * 16 : source.kind === 'ns' ? 210 : 150;
       for (const other of this.bodies) {
-        if (source === other) continue;
-        const dx = source.x - other.x;
-        const dy = source.y - other.y;
-        const d = Math.hypot(dx, dy);
-        if (d < 1 || d > range) continue;
-        const acceleration = strength * Math.pow(1 - d / range, 1.2);
-        other.vx += dx / d * acceleration * dt;
-        other.vy += dy / d * acceleration * dt;
+        if (source === other || (other.kind !== 'star' && other.id < source.id)) continue;
+        const dx = source.x - other.x, dy = source.y - other.y;
+        const soft = Math.max(24, (source.radius + other.radius) * .3);
+        const r2 = dx * dx + dy * dy + soft * soft;
+        let factor = PHYSICS.gravityConstant / (r2 * Math.sqrt(r2));
+        const maximum = factor * Math.hypot(dx, dy) * Math.max(source.mass, other.mass);
+        factor *= Math.min(1, PHYSICS.gravityAccelerationLimit / (maximum || 1));
+        other.vx += dx * factor * source.mass * dt;
+        other.vy += dy * factor * source.mass * dt;
+        source.vx -= dx * factor * other.mass * dt;
+        source.vy -= dy * factor * other.mass * dt;
       }
     }
   }
@@ -324,7 +342,7 @@ export class Simulation {
     this._removeBody(b.id);
     const merged = this.addBody(kind, type, x, y, mass);
     merged.vx = vx;
-    merged.vy = vy - (kind === 'star' ? 27 : 10);
+    merged.vy = vy - (kind === 'star' ? 27 : 0);
     merged.mergeGrace = 0.2;
     merged.dropGrace = Math.max(a.dropGrace, b.dropGrace);
     this.combo = this.time - this._lastMerge < 1.4 ? this.combo + 1 : 1;
@@ -423,7 +441,7 @@ export class Simulation {
     for (const body of this.bodies.slice()) {
       if (body.kind !== 'star' || !this.bodies.includes(body)) continue;
       if (body.mass >= PHYSICS.coreCollapseMass) {
-        if (body.collapseAt - body.age < 5) {
+        if (body.collapseAt - body.age < 5 * PHYSICS.supernovaTimeScale) {
           body.evolution = 'pre-supernova';
           body.layers = SHELL_LAYERS;
         }
@@ -470,7 +488,7 @@ export class Simulation {
       power: 1 + Math.min(progenitorMass, 40) / 60,
       killRadius: oldRadius + 30,
       radius: 280 + Math.min(100, progenitorMass * 2),
-      variant: 'core-collapse', progenitorMass,
+      variant: 'core-collapse', progenitorMass, ejectaRadius: oldRadius,
       text: blackHole ? '核心坍缩超新星 · 黑洞诞生' : '核心坍缩超新星 · 中子星诞生',
     });
     this._emit('evolve', body, { fromKind: 'star', toKind: body.kind, progenitorMass, power: 0.4 });
@@ -481,34 +499,45 @@ export class Simulation {
     const killRadius = options.killRadius ?? 64;
     const radius = options.radius ?? 305;
     let destroyed = 0;
+    const ejecta = [];
     for (const other of this.bodies.slice()) {
       if (other.id === excludedId) continue;
       let dx = other.x - x;
       let dy = other.y - y;
       let d = Math.hypot(dx, dy);
       if (other.kind === 'star' && d < killRadius + other.radius * 0.15) {
+        ejecta.push({ x: other.x, y: other.y, radius: other.radius, color: STAR_TYPES[other.type].color, mass: other.mass });
         this._removeBody(other.id);
         destroyed++;
         continue;
       }
-      if (d >= radius) continue;
-      if (d < 1) {
-        const angle = this._random() * Math.PI * 2;
-        dx = Math.cos(angle);
-        dy = Math.sin(angle);
-        d = 1;
-      }
-      const impulse = 610 * power * Math.pow(1 - d / radius, 0.9) / Math.pow(inertialMass(other), 0.18);
-      other.vx += dx / d * impulse;
-      other.vy += dy / d * impulse - 55 * power;
-      other.dropGrace = Math.max(other.dropGrace, 2.5);
-      other.dangerTime = 0;
     }
+    this.shocks.push({ x, y, power, radius, age: 0, duration: 2.4, hitIds: new Set([excludedId]) });
     this.stats.supernovae++;
     this._emit('supernova', { x, y, id: excludedId, mass: options.progenitorMass ?? 1.4, kind: 'star', type: 6 }, {
       color: options.variant === 'Ia' ? '#fff2c9' : '#bbbcff',
-      ...options, radius, killRadius, destroyed, power,
+      ...options, radius, killRadius, destroyed, power, ejecta, duration: 14,
     });
+  }
+
+  _updateShocks(dt) {
+    for (const shock of this.shocks) {
+      shock.age += dt;
+      const front = shock.radius * Math.min(1, shock.age / shock.duration);
+      for (const body of this.bodies) {
+        if (shock.hitIds.has(body.id)) continue;
+        const dx = body.x - shock.x, dy = body.y - shock.y;
+        const d = Math.max(1, Math.hypot(dx, dy));
+        if (d > front || d >= shock.radius) continue;
+        shock.hitIds.add(body.id);
+        const impulse = 610 * shock.power * Math.pow(1 - d / shock.radius, .9) / Math.pow(inertialMass(body), .18);
+        body.vx += dx / d * impulse;
+        body.vy += dy / d * impulse;
+        body.dropGrace = Math.max(body.dropGrace, 2.5);
+        body.dangerTime = 0;
+      }
+    }
+    this.shocks = this.shocks.filter(shock => shock.age < shock.duration);
   }
 
   _removeBody(id) {
@@ -564,10 +593,15 @@ export class Simulation {
         source.accretionRate = 0;
         continue;
       }
-      const rate = source.kind === 'bh' ? 0.72 + source.mass * 0.075 : source.kind === 'ns' ? 0.12 : 0.14;
+      const rate = source.kind === 'bh' ? (0.72 + source.mass * 0.075) * PHYSICS.blackHoleAccretionScale : source.kind === 'ns' ? 0.12 : 0.14;
       const amount = Math.min(donor.mass, rate * dt);
       source.accretionRate = rate;
-      source.mass += amount;
+      const retained = source.kind === 'ns' ? Math.min(amount, Math.max(0, PHYSICS.neutronStarLimit - source.mass)) : amount;
+      source.mass += retained;
+      // A gameplay propeller/outflow prescription: excess fuel is expelled.
+      // Neutron stars keep bursting and NEVER collapse through accretion.
+      source.ejectedMass = (source.ejectedMass || 0) + amount - retained;
+      this.stats.ejected += amount - retained;
       donor.mass -= amount;
       source.radius = remnantRadius(source.kind, source.mass);
       donor.radius = starRadius(Math.max(0.001, donor.mass));
@@ -577,7 +611,7 @@ export class Simulation {
         donor.evolution = 'main-sequence';
         delete donor.layers;
       }
-      this.stats.accreted += amount;
+      this.stats.accreted += retained;
       this.stats.bestMass = Math.max(this.stats.bestMass, source.mass);
       if (source.kind === 'ns') {
         source.burstTimer += dt;
@@ -588,8 +622,11 @@ export class Simulation {
       }
       if (donor.mass <= 0.003) {
         // Account for the last numerical crumb without silently losing mass.
-        source.mass += donor.mass;
-        this.stats.accreted += donor.mass;
+        const crumb = source.kind === 'ns' ? Math.min(donor.mass, Math.max(0, PHYSICS.neutronStarLimit - source.mass)) : donor.mass;
+        source.mass += crumb;
+        this.stats.accreted += crumb;
+        this.stats.ejected += donor.mass - crumb;
+        source.ejectedMass = (source.ejectedMass || 0) + donor.mass - crumb;
         this.stats.starsAbsorbed++;
         this._removeBody(donor.id);
         source.accretingId = null;
@@ -599,12 +636,6 @@ export class Simulation {
         const { x, y, id } = source;
         this._removeBody(id);
         this._blast(x, y, id, { power: 1.3, killRadius: 69, radius: 312, variant: 'Ia', progenitorMass: 1.4, text: 'Ia 型超新星 · 白矮星完全解体' });
-      } else if (source.kind === 'ns' && source.mass >= PHYSICS.neutronStarLimit) {
-        const mass = source.mass;
-        this._convert(source, 'bh', mass);
-        // Conversion preserves mass but releases a current donor to reacquire.
-        if (donor && this.bodies.includes(donor)) donor.lockedBy = null;
-        this._emit('evolve', source, { fromKind: 'ns', toKind: 'bh', power: 0.55, text: '中子星越过支撑极限 · 坍缩为黑洞' });
       }
     }
   }
@@ -620,7 +651,7 @@ export class Simulation {
       other.vx += dx / d * kick;
       other.vy += dy / d * kick - 8;
     }
-    this._emit('burst', source, { power: 0.45, radius: 190, variant: 'x-ray', text: '周期性 X 射线暴' });
+    this._emit('burst', source, { power: 0.45, radius: 190, variant: 'x-ray', ejectedMass: source.ejectedMass || 0, text: '周期性 X 射线暴' });
   }
 
   _checkVictory() {
@@ -632,12 +663,12 @@ export class Simulation {
     this.winTime = this.time;
     this.stats.timeBonus = calculateTimeBonus(this.time);
     this.score += this.stats.timeBonus;
-    winner.isSupermassive = true;
+    winner.isGalaxySeed = true;
     this.finaleTime = 0;
     for (const body of this.bodies) body.lockedBy = null;
     this._emit('win', winner, {
       power: 2, timeBonus: this.stats.timeBonus, score: this.score,
-      text: '失控吸积启动 · 星系之心诞生', isLab: this.isLab,
+      text: '失控吸积启动 · 星系之心诞生',
     });
   }
 
@@ -654,7 +685,7 @@ export class Simulation {
     }
     this.dangerTime = highestDanger;
     this.danger = clamp(highestDanger / 3, 0, 1);
-    if (!this.isLab && highestDanger >= 3) {
+    if (highestDanger >= 3) {
       this.state = 'lost';
       this._emit('lose', null, { text: '星云舱已满 · 再试一次', score: this.score });
     }
@@ -688,73 +719,32 @@ export class Simulation {
       const dx = winner.x - body.x;
       const dy = winner.y - body.y;
       const d = Math.max(1, Math.hypot(dx, dy));
-      if (d < winner.radius * 0.9) {
-        winner.mass += body.mass;
-        this._removeBody(body.id);
-        continue;
-      }
-      body.vx += (dx / d * 720 - dy / d * 85) * dt;
-      body.vy += (dy / d * 720 + dx / d * 85) * dt;
-      body.vx *= Math.pow(0.989, dt * 60);
-      body.vy *= Math.pow(0.989, dt * 60);
+      const field = gravityAt(dx, dy, winner.mass, winner.radius * .7);
+      body.vx += field.x * dt;
+      body.vy += field.y * dt;
+      const viscous = Math.exp(-dt * .32 * Math.max(0, 1 - d / 300));
+      body.vx *= viscous;
+      body.vy *= viscous;
       body.x += body.vx * dt;
       body.y += body.vy * dt;
       body.rotation += dt;
       body.lockedBy = winner.id;
-      if (d < 150) body.radius = Math.max(2, body.radius - dt * 9);
+      if (d < 300) {
+        const amount = Math.min(body.mass, (0.72 + winner.mass * .075) * PHYSICS.blackHoleAccretionScale * dt);
+        winner.mass += amount;
+        body.mass -= amount;
+        body.radius = starRadius(Math.max(.001, body.mass));
+        if (body.mass < .003) { winner.mass += body.mass; this._removeBody(body.id); }
+      }
     }
     winner.accretingId = winner.accretingIds[0] ?? null;
-  }
-
-  loadScenario(name) {
-    const valid = ['fusion', 'supernova', 'accretion', 'neutron', 'white-dwarf', 'finale'];
-    if (!valid.includes(name)) throw new TypeError(`Unknown lab scenario: ${name}`);
-    this._reset();
-    this.state = 'playing';
-    this.isLab = true;
-    this.labName = name;
-    const star = (type, x, y, mass) => this.addBody('star', type, x, y, mass);
-    if (name === 'fusion') {
-      star(0, 132, 750); star(0, 169, 750);
-      star(1, 275, 739); star(1, 326, 739);
-      star(2, 460, 720); star(2, 529, 720);
-      star(3, 260, 560); star(3, 350, 550);
-    } else if (name === 'supernova') {
-      const a = star(5, 226, 660); a.age = a.collapseAt - 1.6;
-      const b = star(6, 470, 648, 32); b.age = b.collapseAt - 4.2;
-      star(0, 145, 709); star(1, 144, 766); star(2, 338, 760);
-      star(0, 570, 748); star(1, 588, 638); star(0, 375, 520);
-    } else if (name === 'accretion') {
-      this.addBody('bh', 6, 350, 762, 9);
-      star(4, 446, 737); star(3, 248, 750); star(1, 186, 770);
-      star(2, 555, 760); star(0, 112, 776);
-      // The pair accretes independently before meeting after about five seconds.
-      this.addBody('bh', 6, 90, 768, 3.2);
-    } else if (name === 'neutron') {
-      this.addBody('ns', 6, 290, 780, 1.45);
-      this.addBody('ns', 6, 470, 780, 1.45);
-      star(2, 225, 761); star(3, 535, 750);
-      star(1, 145, 770); star(0, 620, 777);
-    } else if (name === 'white-dwarf') {
-      this.addBody('wd', 2, 350, 781, 1.22);
-      star(2, 414, 759);
-      const future = star(2, 204, 760); future.age = 299.2;
-      star(0, 276, 779); star(1, 518, 770); star(0, 598, 778);
-    } else if (name === 'finale') {
-      this.addBody('bh', 6, 350, 748, 38.5);
-      star(4, 467, 740); star(3, 244, 750);
-      star(2, 570, 760); star(1, 135, 770);
-    }
-    for (const body of this.bodies) body.mergeGrace = 0.25;
-    this.nextType = this._rollNext();
-    return this;
   }
 
   getSnapshot() {
     return {
       state: this.state, width: this.width, height: this.height,
       time: this.time, score: this.score, nextType: this.nextType,
-      isLab: this.isLab, labName: this.labName, stats: { ...this.stats },
+      stats: { ...this.stats },
       danger: this.danger, dangerTime: this.dangerTime,
       winningMass: this.winningMass, winnerId: this.winnerId,
       winTime: this.winTime, finaleTime: this.finaleTime,

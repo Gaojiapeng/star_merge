@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Simulation, STAR_TYPES, calculateTimeBonus } from '../dist/simulation.js';
+import { Simulation, STAR_TYPES, PHYSICS, gravityAt, calculateTimeBonus } from '../dist/simulation.js';
 
 function game(seed = 417) {
   const events = [];
@@ -166,7 +166,9 @@ test('core-collapse blasts destroy close stars and push farther stars outward', 
   sim.update(1 / 60);
   assert.ok(!sim.bodies.some(value => value.id === close.id), 'adjacent star should be destroyed');
   assert.ok(sim.bodies.some(value => value.id === far.id), 'distant star should survive');
-  assert.ok(far.vx > 0, 'survivor to the right receives an outward impulse');
+  assert.equal(far.vx, 0, 'a distant star is not hit before the shock front arrives');
+  sim._updateShocks(2.4);
+  assert.ok(far.vx > 0, 'survivor receives an outward impulse when the shock arrives');
   assert.ok(events.some(event => eventIs(event, 'supernova') && event.destroyed > 0));
 });
 
@@ -206,7 +208,53 @@ test('a white dwarf crossing 1.4 solar masses self-destructs in a Type Ia supern
   sim.update(1 / 60);
   assert.ok(!sim.bodies.some(value => value.id === dwarf.id), 'the dwarf leaves no compact remnant');
   assert.ok(events.some(event => eventIs(event, 'supernova') && event.variant === 'Ia'));
+  sim._updateShocks(2.4);
   assert.ok(distant.vx > 0, 'Type Ia ejecta also mix the remaining stars');
+});
+
+test('core-collapse lifetimes are exactly five times the original values', () => {
+  const {sim}=game();
+  for(const [mass,original] of [[8,27],[16,18],[32,7]]) {
+    const star=body(sim,'star',5,100,500,mass);
+    assert.equal(star.collapseAt,original*5);
+  }
+});
+
+test('black-hole mass transfer is exactly one twentieth of its previous rate', () => {
+  const {sim}=game();const hole=body(sim,'bh',6,330,500,9),donor=body(sim,'star',4,430,500);
+  const expected=(.72+9*.075)/20,initial=donor.mass;
+  sim._updateAccretion(.05);
+  assert.ok(Math.abs(initial-donor.mass-expected*.05)<1e-10);
+  assert.ok(Math.abs(hole.accretionRate-expected)<1e-10);
+});
+
+test('neutron-star accretion never forms a black hole; excess mass is ejected', () => {
+  const {sim,events}=game();const neutron=body(sim,'ns',6,330,500,2.299),donor=body(sim,'star',4,410,500);
+  const total=neutron.mass+donor.mass;
+  for(let i=0;i<240;i++)sim._updateAccretion(1/60);
+  assert.equal(neutron.kind,'ns');assert.equal(neutron.mass,PHYSICS.neutronStarLimit);
+  assert.ok(sim.stats.ejected>0);assert.ok(events.some(event=>event.kind==='burst'));
+  assert.ok(Math.abs(neutron.mass+donor.mass+sim.stats.ejected-total)<1e-9);
+});
+
+test('the win threshold is 2000 solar masses and 40 no longer wins', () => {
+  const {sim}=game();const hole=body(sim,'bh',6,330,500,40);sim._checkVictory();
+  assert.equal(sim.state,'playing');assert.equal(sim.winningMass,40*50);
+  hole.mass=1999.99;sim._checkVictory();assert.equal(sim.state,'playing');
+  hole.mass=2000;sim._checkVictory();assert.equal(sim.state,'won');
+});
+
+test('softened gravity approaches inverse-square falloff and is finite at the origin', () => {
+  const near=gravityAt(200,0,1,1),far=gravityAt(400,0,1,1),center=gravityAt(0,0,1000);
+  assert.ok(Math.abs(near.x/far.x-4)<.001);assert.equal(near.y,0);
+  assert.deepEqual(center,{x:0,y:0});
+});
+
+test('remnant gravity applies opposite pair momentum without orbit singularities', () => {
+  const {sim}=game();const hole=body(sim,'bh',6,330,500,9),star=body(sim,'star',2,450,500,1);
+  sim._applyGravity(.01);
+  assert.ok(star.vx<0&&hole.vx>0);assert.ok(Math.abs(hole.mass*hole.vx+star.mass*star.vx)<1e-9);
+  assert.equal(star.vy,0);assert.equal(hole.vy,0);
 });
 
 test('a neutron star accretes matter and emits repeated regular X-ray bursts', () => {
