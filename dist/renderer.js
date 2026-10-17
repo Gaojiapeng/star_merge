@@ -1,4 +1,4 @@
-import { STAR_TYPES, PHYSICS, gravityAt } from './simulation.js';
+import { STAR_TYPES, PHYSICS, gravityAt } from './simulation.js?v=2.0.1';
 const W=700,H=820,TAU=Math.PI*2,clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const palettes=[['#481d24','#8d2e30','#de4938','#ff7950','#ffc18c'],['#583322','#a7552b','#e9923d','#ffc36c','#ffe2a3'],['#655125','#af8537','#e6b952','#ffe194','#fff4ce'],['#59534b','#a7987b','#dbcfad','#fff0cc','#fff9e9'],['#313f66','#6078ab','#a2bddd','#d7edff','#f5fbff'],['#26345f','#435e9e','#799bdd','#accbff','#e5eeff'],['#332754','#655095','#9385cf','#c5b9ff','#f0e8ff']];
 const cooling=['#fffbe0','#ffe6a6','#ffc26e','#f39148','#c3573e','#74424c','#3c3543','#20242c'],cyan=['#f0ffff','#bbf7ff','#6cd5fa','#489ac5','#39668c','#2c3d5d'];

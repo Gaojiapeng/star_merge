@@ -1,5 +1,5 @@
-import { Simulation, STAR_TYPES, PHYSICS } from './simulation.js';
-import { Renderer } from './renderer.js';
+import { Simulation, STAR_TYPES, PHYSICS } from './simulation.js?v=2.0.1';
+import { Renderer } from './renderer.js?v=2.0.1';
 const $=id=>document.getElementById(id),clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const pad=n=>String(Math.floor(n)).padStart(2,'0'),timeText=n=>`${pad(n/60)}:${pad(n%60)}`;
 const massText=n=>n<10?n.toFixed(2):Math.round(n).toLocaleString('en-US');

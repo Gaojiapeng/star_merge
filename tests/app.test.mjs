@@ -164,6 +164,7 @@ test('minimal game starts, responds to mobile input, pauses, and reaches its end
       assert.ok(!html.includes('lab-open')&&!html.includes('guide-open')&&!html.includes('inspector'));
       assert.equal(get('ready-overlay').hidden,false);
       assert.equal(get('score').textContent,'0');
+      assert.equal(get('bh-mass').textContent,'0.00','attract-screen scenery is not actual game progress');
       assert.equal(sim.winningMass,2000);
       assert.ok(renderer.materials.size>0,'stars are rasterized from material particles');
     });
