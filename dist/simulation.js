@@ -48,7 +48,8 @@ export const PHYSICS = Object.freeze({
   whiteDwarfAge: 300,
   winningMass: 2000,
   supernovaTimeScale: 5,
-  blackHoleAccretionScale: 1 / 20,
+  blackHoleAccretionScale: 1 / 200,
+  blackHoleMergerContactTime: 6,
   gravityConstant: 200000,
   gravityAccelerationLimit: 1400,
 });
@@ -137,6 +138,7 @@ export class Simulation {
     this._id = 0;
     this.bodies = [];
     this.shocks = [];
+    this.blackHoleContacts = new Map();
     this.time = 0;
     this.score = 0;
     this.nextType = 0;
@@ -227,7 +229,7 @@ export class Simulation {
       collapseAt: lifetime(mass),
       evolution: kind === 'star' ? 'main-sequence' : kind,
       rotation: this._random() * Math.PI * 2,
-      angularVelocity: (this._random() - 0.5) * 0.15,
+      angularVelocity: 0,
       gravityRadius: kind === 'bh' ? 210 + Math.sqrt(mass) * 19 : kind === 'ns' ? 190 : kind === 'wd' ? 140 : 0,
       accretionRate: 0,
     };
@@ -259,6 +261,7 @@ export class Simulation {
       body.mergeGrace = Math.max(0, body.mergeGrace - dt);
       body.dropGrace = Math.max(0, body.dropGrace - dt);
       body.rotation += body.angularVelocity * dt;
+      body.angularVelocity *= Math.exp(-dt*.025);
     }
     this._applyGravity(dt);
     this._updateShocks(dt);
@@ -274,7 +277,7 @@ export class Simulation {
       body.x += body.vx * dt;
       body.y += body.vy * dt;
     }
-    this._mergeContacts();
+    this._mergeContacts(dt);
     for (let i = 0; i < 5; i++) {
       this._solveContacts();
       this._solveBounds();
@@ -288,11 +291,11 @@ export class Simulation {
   _applyGravity(dt) {
     // Only remnants source the additional field. Each pair is solved once;
     // opposite acceleration preserves pair momentum even under the safety cap.
-    const compact = this.bodies.filter(body => body.kind !== 'star');
+    const compact = this.bodies.filter(body => body.kind !== 'star' && body.kind !== 'bh');
     for (const source of compact) {
       source.gravityRadius = source.kind === 'bh' ? 240 + Math.sqrt(source.mass) * 16 : source.kind === 'ns' ? 210 : 150;
       for (const other of this.bodies) {
-        if (source === other || (other.kind !== 'star' && other.id < source.id)) continue;
+        if (source === other || other.kind === 'bh' || (other.kind !== 'star' && other.id < source.id)) continue;
         const dx = source.x - other.x, dy = source.y - other.y;
         const soft = Math.max(24, (source.radius + other.radius) * .3);
         const r2 = dx * dx + dy * dy + soft * soft;
@@ -307,10 +310,12 @@ export class Simulation {
     }
   }
 
-  _mergeContacts() {
+  _mergeContacts(dt=1/60) {
     const available = this.bodies.slice();
     const consumed = new Set();
     const pairs = [];
+    const activeBlackHolePairs = new Set();
+    for(const body of available)body.mergerProgress=0;
     for (let i = 0; i < available.length; i++) {
       const a = available[i];
       if (consumed.has(a.id) || a.lockedBy || a.mergeGrace > 0) continue;
@@ -321,6 +326,14 @@ export class Simulation {
           || (a.kind === 'bh' && b.kind === 'bh')
           || (a.kind === 'ns' && b.kind === 'ns');
         if (!canMerge || distance(a, b) > a.radius + b.radius + 0.5) continue;
+        if(a.kind==='bh'&&b.kind==='bh'){
+          const key=Math.min(a.id,b.id)+':'+Math.max(a.id,b.id);
+          activeBlackHolePairs.add(key);
+          const contact=(this.blackHoleContacts.get(key)||0)+dt;
+          this.blackHoleContacts.set(key,contact);
+          a.mergerProgress=b.mergerProgress=Math.min(1,contact/PHYSICS.blackHoleMergerContactTime);
+          if(contact<PHYSICS.blackHoleMergerContactTime)continue;
+        }
         consumed.add(a.id);
         consumed.add(b.id);
         pairs.push([a, b]);
@@ -328,6 +341,7 @@ export class Simulation {
       }
     }
     for (const [a, b] of pairs) this._merge(a, b);
+    for(const key of this.blackHoleContacts.keys())if(!activeBlackHolePairs.has(key))this.blackHoleContacts.delete(key);
   }
 
   _merge(a, b) {
@@ -345,6 +359,11 @@ export class Simulation {
     merged.vy = vy - (kind === 'star' ? 27 : 0);
     merged.mergeGrace = 0.2;
     merged.dropGrace = Math.max(a.dropGrace, b.dropGrace);
+    const inertia=body=>.5*inertialMass(body)*body.radius**2;
+    const angularMomentum=inertia(a)*a.angularVelocity+inertia(b)*b.angularVelocity
+      +inertialMass(a)*((a.x-x)*(a.vy-vy)-(a.y-y)*(a.vx-vx))
+      +inertialMass(b)*((b.x-x)*(b.vy-vy)-(b.y-y)*(b.vx-vx));
+    merged.angularVelocity=clamp(angularMomentum/inertia(merged),-3.5,3.5);
     this.combo = this.time - this._lastMerge < 1.4 ? this.combo + 1 : 1;
     this._lastMerge = this.time;
     this.stats.merges++;
@@ -404,12 +423,16 @@ export class Simulation {
         a.vy -= impulse * ny * ia;
         b.vx += impulse * nx * ib;
         b.vy += impulse * ny * ib;
-        const tangentSpeed = -rvx * ny + rvy * nx;
-        const friction = clamp(-tangentSpeed / inverseSum, -impulse * 0.2, impulse * 0.2);
+        const invIa=2*ia/(a.radius*a.radius),invIb=2*ib/(b.radius*b.radius);
+        const tangentSpeed = -rvx * ny + rvy * nx-a.angularVelocity*a.radius-b.angularVelocity*b.radius;
+        const frictionDenominator=inverseSum+a.radius*a.radius*invIa+b.radius*b.radius*invIb;
+        const friction = clamp(-tangentSpeed / frictionDenominator, -impulse * 0.24, impulse * 0.24);
         a.vx += friction * ny * ia;
         a.vy -= friction * nx * ia;
         b.vx -= friction * ny * ib;
         b.vy += friction * nx * ib;
+        a.angularVelocity=clamp(a.angularVelocity-friction*a.radius*invIa,-3.5,3.5);
+        b.angularVelocity=clamp(b.angularVelocity-friction*b.radius*invIb,-3.5,3.5);
       }
     }
   }
@@ -427,7 +450,11 @@ export class Simulation {
       if (body.y + body.radius > this.floor) {
         body.y = this.floor - body.radius;
         if (body.vy > 0) body.vy = body.vy > 35 ? -body.vy * 0.1 : 0;
-        body.vx *= 0.94;
+        const slip=body.vx-body.angularVelocity*body.radius;
+        const friction=-slip/3;
+        body.vx+=friction*.35;
+        body.angularVelocity=clamp(body.angularVelocity-2*friction/body.radius*.35,-3.5,3.5);
+        body.vx *= 0.995;
       }
       // Blast ejecta may leave the chamber briefly and fall back in.
       if (body.y < -250) {
@@ -565,7 +592,7 @@ export class Simulation {
         for (const candidate of this.bodies) {
           if (candidate.kind !== 'star' || candidate.lockedBy || candidate.age < 0.25) continue;
           const d = distance(source, candidate);
-          const capture = source.radius + candidate.radius + (source.kind === 'bh' ? 65 : source.kind === 'ns' ? 48 : 32);
+          const capture = source.radius + candidate.radius + (source.kind === 'bh' ? 3 : source.kind === 'ns' ? 48 : 32);
           if (d < capture && d < nearest) {
             donor = candidate;
             nearest = d;
@@ -587,7 +614,8 @@ export class Simulation {
         continue;
       }
       // A blast can strip the donor from its accretor; release the shared lock.
-      if (distance(source, donor) > source.gravityRadius + donor.radius + 80) {
+      const releaseDistance=source.kind==='bh'?source.radius+donor.radius+6:source.gravityRadius+donor.radius+80;
+      if (distance(source, donor) > releaseDistance) {
         donor.lockedBy = null;
         source.accretingId = null;
         source.accretionRate = 0;
@@ -719,17 +747,11 @@ export class Simulation {
       const dx = winner.x - body.x;
       const dy = winner.y - body.y;
       const d = Math.max(1, Math.hypot(dx, dy));
-      const field = gravityAt(dx, dy, winner.mass, winner.radius * .7);
-      body.vx += field.x * dt;
-      body.vy += field.y * dt;
-      const viscous = Math.exp(-dt * .32 * Math.max(0, 1 - d / 300));
-      body.vx *= viscous;
-      body.vy *= viscous;
       body.x += body.vx * dt;
       body.y += body.vy * dt;
-      body.rotation += dt;
+      body.rotation += body.angularVelocity * dt;
       body.lockedBy = winner.id;
-      if (d < 300) {
+      if (d <= winner.radius+body.radius+3) {
         const amount = Math.min(body.mass, (0.72 + winner.mass * .075) * PHYSICS.blackHoleAccretionScale * dt);
         winner.mass += amount;
         body.mass -= amount;
@@ -752,3 +774,5 @@ export class Simulation {
     };
   }
 }
+
+

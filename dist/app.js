@@ -1,5 +1,6 @@
-import { Simulation, STAR_TYPES, PHYSICS } from './simulation.js?v=2.0.1';
-import { Renderer } from './renderer.js?v=2.0.1';
+import { Simulation, STAR_TYPES, PHYSICS } from './simulation.js?v=3.0.0';
+import { Renderer } from './renderer.js?v=3.0.0';
+import { HoldDrop } from './hold-drop.js?v=3.0.0';
 const $=id=>document.getElementById(id),clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const pad=n=>String(Math.floor(n)).padStart(2,'0'),timeText=n=>`${pad(n/60)}:${pad(n%60)}`;
 const massText=n=>n<10?n.toFixed(2):Math.round(n).toLocaleString('en-US');
@@ -9,21 +10,23 @@ try{best=Number(localStorage.getItem(storageKey+'-best'))||0;settings={...settin
 let renderer,mode='drop',selectedId=null,activePointer=null,restoreAfterOptions=false,toastTimer,audioContext,wonBefore=false;
 const sim=new Simulation({onEvent:event=>{renderer?.event(event);playSound(event.kind);if(event.kind==='supernova')toast(event.variant==='Ia'?'Ia 型超新星':'超新星爆发');}});
 renderer=new Renderer($('universe'),sim);
+const hold=new HoldDrop(x=>{if(sim.state==='playing'&&mode==='drop')sim.drop(x);});
+function cancelHold(){activePointer=null;hold.cancel();}
 export { sim, renderer };
 function playSound(kind){
   if(!settings.sound||!['merge','supernova','wave','burst'].includes(kind))return;
   try{audioContext??=new(window.AudioContext||window.webkitAudioContext)();if(audioContext.state==='suspended')audioContext.resume();const osc=audioContext.createOscillator(),gain=audioContext.createGain(),t=audioContext.currentTime,duration=kind==='supernova'?1.6:kind==='wave'?1:.2;osc.type=kind==='wave'?'sine':kind==='supernova'?'triangle':'sine';osc.frequency.setValueAtTime({merge:360,supernova:55,wave:100,burst:680}[kind],t);osc.frequency.exponentialRampToValueAtTime(kind==='merge'?650:22,t+duration);gain.gain.setValueAtTime(.0001,t);gain.gain.exponentialRampToValueAtTime(.035,t+.02);gain.gain.exponentialRampToValueAtTime(.0001,t+duration);osc.connect(gain);gain.connect(audioContext.destination);osc.start(t);osc.stop(t+duration);}catch{}
 }
 function toast(text){clearTimeout(toastTimer);$('toast').textContent=text;$('toast').hidden=false;toastTimer=setTimeout(()=>$('toast').hidden=true,2400);}
-function reset(){activePointer=null;selectedId=null;renderer.selectedId=null;renderer.reset();sim.restart();wonBefore=false;setMode('drop');updateUi();}
+function reset(){cancelHold();selectedId=null;renderer.selectedId=null;renderer.reset();sim.restart();wonBefore=false;setMode('drop');updateUi();}
 function start(){renderer.reset();sim.start();updateUi();$('universe').focus({preventScroll:true});}
-function togglePause(){if(['playing','paused'].includes(sim.state)){sim.togglePause();updateUi();}}
-function setMode(next){mode=next;renderer.inspectMode=next==='inspect';$('mode').setAttribute('aria-pressed',next==='inspect');$('mode').innerHTML=next==='inspect'?'<span aria-hidden="true">✦</span> 投放':'<span aria-hidden="true">◎</span> 查看';$('universe').style.cursor=next==='inspect'?'help':'crosshair';if(next==='drop'){selectedId=null;renderer.selectedId=null;$('body-info').hidden=true;}}
+function togglePause(){cancelHold();if(['playing','paused'].includes(sim.state)){sim.togglePause();updateUi();}}
+function setMode(next){cancelHold();mode=next;renderer.inspectMode=next==='inspect';$('mode').setAttribute('aria-pressed',next==='inspect');$('mode').innerHTML=next==='inspect'?'<span aria-hidden="true">✦</span> 投放':'<span aria-hidden="true">◎</span> 查看';$('universe').style.cursor=next==='inspect'?'help':'crosshair';if(next==='drop'){selectedId=null;renderer.selectedId=null;$('body-info').hidden=true;}}
 $('start').onclick=start;$('pause').onclick=togglePause;$('mode').onclick=()=>{setMode(mode==='drop'?'inspect':'drop');if(mode==='inspect')toast('点击天体，查看质量与元素分层');};
 $('restart').onclick=()=>{reset();start();};
 $('state-action').onclick=()=>{if(sim.state==='paused')togglePause();else{reset();start();}};
 $('info-close').onclick=()=>{selectedId=null;renderer.selectedId=null;$('body-info').hidden=true;};
-$('settings-open').onclick=()=>{activePointer=null;restoreAfterOptions=sim.state==='playing';if(restoreAfterOptions)sim.togglePause();$('settings-dialog').showModal();updateUi();};
+$('settings-open').onclick=()=>{cancelHold();restoreAfterOptions=sim.state==='playing';if(restoreAfterOptions)sim.togglePause();$('settings-dialog').showModal();updateUi();};
 $('settings-close').onclick=()=>$('settings-dialog').close();
 $('settings-dialog').addEventListener('close',()=>{if(restoreAfterOptions&&sim.state==='paused')sim.togglePause();restoreAfterOptions=false;updateUi();});
 $('settings-dialog').addEventListener('click',e=>{if(e.target!==$('settings-dialog'))return;const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)e.target.close();});
@@ -32,12 +35,15 @@ for(const key of Object.keys(settings))$('setting-'+key).onchange=e=>{settings[k
 function point(event){const r=$('universe').getBoundingClientRect(),x=(event.clientX-r.left)*$('universe').width/r.width,y=(event.clientY-r.top)*$('universe').height/r.height;return{x:(x-renderer.offsetX)/renderer.scale,y:(y-renderer.offsetY)/renderer.scale};}
 $('universe').addEventListener('pointermove',e=>{renderer.pointerX=clamp(point(e).x,42,658);});
 $('universe').addEventListener('pointerdown',e=>{
-  if(e.button!==0)return;const p=point(e);if(p.y<0||p.y>sim.height)return;renderer.pointerX=clamp(p.x,42,658);
+  if(e.button!==0||activePointer!==null)return;const p=point(e);if(p.y<0||p.y>sim.height)return;renderer.pointerX=clamp(p.x,42,658);
   if(mode==='inspect'||e.shiftKey){const body=[...sim.bodies].reverse().find(b=>Math.hypot(b.x-p.x,b.y-p.y)<b.radius+10);if(body){selectedId=body.id;renderer.selectedId=body.id;updateInfo();}return;}
-  if(sim.state==='playing'){activePointer=e.pointerId;$('universe').setPointerCapture?.(e.pointerId);}
+  if(sim.state==='playing'){activePointer=e.pointerId;hold.begin(e.pointerId,renderer.pointerX);$('universe').setPointerCapture?.(e.pointerId);}
 });
-$('universe').addEventListener('pointerup',e=>{if(activePointer===null||e.pointerId!==activePointer)return;activePointer=null;renderer.pointerX=clamp(point(e).x,42,658);if(sim.state==='playing'&&mode==='drop')sim.drop(renderer.pointerX);updateUi();});
-$('universe').addEventListener('pointercancel',()=>{activePointer=null;});
+$('universe').addEventListener('pointermove',e=>hold.move(e.pointerId,renderer.pointerX));
+$('universe').addEventListener('pointerup',e=>{if(activePointer===null||e.pointerId!==activePointer)return;renderer.pointerX=clamp(point(e).x,42,658);hold.end(e.pointerId,renderer.pointerX);activePointer=null;updateUi();});
+$('universe').addEventListener('pointercancel',cancelHold);
+$('universe').addEventListener('lostpointercapture',cancelHold);
+$('universe').addEventListener('contextmenu',e=>e.preventDefault());
 document.addEventListener('keydown',e=>{
   if($('settings-dialog').open||['BUTTON','INPUT','A','SELECT','TEXTAREA'].includes(e.target.tagName))return;
   if(['ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();
@@ -46,14 +52,14 @@ document.addEventListener('keydown',e=>{
   if(e.code==='Space'&&!e.repeat){if(sim.state==='ready')start();else if(sim.state==='playing'&&mode==='drop')sim.drop(renderer.pointerX);}
   if(e.key.toLowerCase()==='p'&&!e.repeat)togglePause();
 });
-document.addEventListener('visibilitychange',()=>{if(document.hidden){activePointer=null;restoreAfterOptions=false;if(sim.state==='playing')sim.togglePause();updateUi();}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelHold();restoreAfterOptions=false;if(sim.state==='playing')sim.togglePause();updateUi();}});
 new ResizeObserver(()=>renderer.resize()).observe($('canvas-wrap'));
 function updateInfo(){
   const b=sim.bodies.find(b=>b.id===selectedId);$('body-info').hidden=!b;if(!b){selectedId=null;renderer.selectedId=null;return;}
   $('info-name').textContent=b.kind==='star'?`${STAR_TYPES[b.type].type} 型 · ${STAR_TYPES[b.type].name}`:{bh:'黑洞',ns:'中子星',wd:'白矮星'}[b.kind];$('info-mass').textContent=`${massText(b.mass)} M☉`;
   const layers=b.kind==='bh'?[['事件视界','#cdb4a2'],['等离子吸积盘','#de9e60'],['引力透镜','#b3a5cb']]:b.kind==='ns'?[['富中子外壳','#a3d7f7'],['中子核心','#c1e9ff']]:b.kind==='wd'?[['H / He 包层','#d9e9ff'],['C / O 简并内核','#a5bad7']]:(b.layers||STAR_TYPES[b.type].layers).map(layer=>[layer.name,layer.color]);
   $('info-layers').replaceChildren(...layers.map(([name,color])=>{const chip=document.createElement('span');chip.textContent=name;chip.style.setProperty('--color',color);return chip;}));
-  $('info-evolution').textContent=b.kind==='star'?`${b.mass>=8?'距核心坍缩':'距白矮星阶段'}约 ${Math.max(0,Math.ceil((b.mass>=8?b.collapseAt:300)-b.age))} 秒`:b.kind==='ns'?'持续吸积并产生 X 射线暴；多余物质由喷流排出，不因吸积坍缩。':b.kind==='wd'?'吸积至 1.4 M☉，触发 Ia 型超新星。':b.accretingId?'正缓慢剥离一颗恒星的物质。':'一次锁定一颗恒星吸积。';
+  $('info-evolution').textContent=b.kind==='star'?`${b.mass>=8?'距核心坍缩':'距白矮星阶段'}约 ${Math.max(0,Math.ceil((b.mass>=8?b.collapseAt:300)-b.age))} 秒`:b.kind==='ns'?'持续吸积并产生 X 射线暴；多余物质由喷流排出，不因吸积坍缩。':b.kind==='wd'?'吸积至 1.4 M☉，触发 Ia 型超新星。':b.accretingId?'正缓慢剥离一颗恒星的物质。':'仅吸积接触的一颗恒星；黑洞之间持续接触 6 秒后合并。';
 }
 function updateUi(){
   $('score').textContent=Math.floor(sim.score).toLocaleString('en-US');if(sim.score>best){best=Math.floor(sim.score);try{localStorage.setItem(storageKey+'-best',String(best));}catch{}}$('best').textContent=best.toLocaleString('en-US');$('timer').textContent=timeText(sim.time);
@@ -67,5 +73,7 @@ function updateUi(){
   if(sim.state==='won'&&!wonBefore){selectedId=null;$('body-info').hidden=true;wonBefore=true;}updateInfo();
 }
 let previous=performance.now(),accumulator=0,lastUi=0;
-function frame(now){const dt=Math.min(.1,(now-previous)/1000);previous=now;if(sim.state==='playing'||sim.state==='won'){accumulator+=dt;while(accumulator>=1/60){sim.update(1/60);accumulator-=1/60;}}else accumulator=0;renderer.render(sim.state==='paused'?0:dt);if(now-lastUi>150){lastUi=now;updateUi();}requestAnimationFrame(frame);}
+function frame(now){const dt=Math.min(.1,(now-previous)/1000);previous=now;if(sim.state==='playing'&&mode==='drop')hold.update(dt);else hold.cancel();if(sim.state==='playing'||sim.state==='won'){accumulator+=dt;while(accumulator>=1/60){sim.update(1/60);accumulator-=1/60;}}else accumulator=0;renderer.render(sim.state==='paused'?0:dt);if(now-lastUi>150){lastUi=now;updateUi();}requestAnimationFrame(frame);}
 applySettings();updateUi();requestAnimationFrame(frame);
+
+

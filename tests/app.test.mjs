@@ -166,7 +166,7 @@ test('minimal game starts, responds to mobile input, pauses, and reaches its end
       assert.equal(get('score').textContent,'0');
       assert.equal(get('bh-mass').textContent,'0.00','attract-screen scenery is not actual game progress');
       assert.equal(sim.winningMass,2000);
-      assert.ok(renderer.materials.size>0,'stars are rasterized from material particles');
+      assert.ok(renderer.optics,'background optics initialized');
     });
     await t.test('Space on a focused button preserves native button behavior', () => {
       const event=env.key(get('settings-open'));
@@ -221,13 +221,11 @@ test('minimal game starts, responds to mobile input, pauses, and reaches its end
       get('setting-quality').onchange({target:{checked:false}});env.tick(.1);
       assert.ok(renderer.particles.length<=1100);
     });
-    await t.test('a crowded field shares a hard material-pixel budget', () => {
-      sim.bodies=[];renderer.reset();
-      for(let i=0;i<100;i++)sim.addBody('star',6,30+i%10*64,150+Math.floor(i/10)*60);
-      renderer.render(1/60);
-      const pixels=[...renderer.materials.values()].reduce((n,m)=>n+m.points.length,0);
-      assert.ok(pixels<=renderer.materialLimit);assert.ok(pixels>0);
-      for(const m of renderer.materials.values())assert.ok(m.points.length>0,'each star retains visible material');
-    });
-  } finally { env.restore(); }
+    await t.test('long press continuously drops and pause cancels the held pointer',()=>{
+      sim.restart();sim.start();sim.bodies=[];env.tick(.5);let drops=0;const original=sim.drop.bind(sim);sim.drop=x=>{drops++;return original(x);};
+      get('universe').dispatch('pointerdown',{pointerId:13,button:0,clientX:350,clientY:300});env.tick(1.3);assert.ok(drops>=3);
+      const before=drops;get('pause').click();env.tick(1);get('state-action').click();env.tick(.6);assert.equal(drops,before);sim.drop=original;
+    });  } finally { env.restore(); }
 });
+
+

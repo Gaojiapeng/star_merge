@@ -123,17 +123,12 @@ test('two O stars can merge into a heavier O star before becoming a black hole',
   assert.equal(sim.bodies[0].kind, 'bh');
 });
 
-test('black-hole mergers emit gravitational waves and retain most of their mass', () => {
-  const { sim, events } = game();
-  body(sim, 'bh', 0, 330, 500, 5);
-  body(sim, 'bh', 0, 331, 500, 6);
-  sim.update(1 / 60);
-  assert.equal(sim.bodies.length, 1);
-  assert.equal(sim.bodies[0].kind, 'bh');
-  assert.ok(sim.bodies[0].mass > 9 && sim.bodies[0].mass <= 11);
-  assert.ok(events.some(event => eventIs(event, 'wave')));
+test('black holes merge only after six seconds of uninterrupted contact and emit waves', () => {
+ const {sim,events}=game();const a=body(sim,'bh',0,330,500,5),b=body(sim,'bh',0,331,500,6);
+ sim._mergeContacts(3);assert.equal(sim.bodies.length,2);
+ b.x=600;sim._mergeContacts(1);b.x=331;sim._mergeContacts(3);assert.equal(sim.bodies.length,2);
+ sim._mergeContacts(3.01);assert.equal(sim.bodies.length,1);assert.ok(sim.bodies[0].mass>9);assert.ok(events.some(e=>e.kind==='wave'));
 });
-
 test('two neutron stars merge into a black hole and emit gravitational waves', () => {
   const { sim, events } = game();
   body(sim, 'ns', 0, 330, 500, 1.7);
@@ -175,8 +170,8 @@ test('core-collapse blasts destroy close stars and push farther stars outward', 
 test('a black hole drains exactly one donor at a time, shrinking it and conserving mass', () => {
   const { sim } = game();
   const hole = body(sim, 'bh', 0, 330, 500, 9);
-  const left = body(sim, 'star', 4, 220, 500);
-  const right = body(sim, 'star', 3, 440, 500);
+  const left = body(sim, 'star', 4, 250, 500);
+  const right = body(sim, 'star', 3, 398, 500);
   const before = [left, right].map(value => ({ id: value.id, mass: value.mass, radius: value.radius }));
   const total = sim.bodies.reduce((sum, value) => sum + value.mass, 0);
   sim.update(1 / 60);
@@ -191,8 +186,8 @@ test('a black hole drains exactly one donor at a time, shrinking it and conservi
 
 test('two black holes cannot claim the same donor simultaneously', () => {
   const { sim } = game();
-  const first = body(sim, 'bh', 0, 280, 500, 5);
-  const second = body(sim, 'bh', 0, 450, 500, 5);
+  const first = body(sim, 'bh', 0, 292, 500, 5);
+  const second = body(sim, 'bh', 0, 408, 500, 5);
   const donor = body(sim, 'star', 2, 350, 500);
   sim.update(1 / 60);
   const owners = [first, second].filter(value => value.accretingId === donor.id);
@@ -220,9 +215,9 @@ test('core-collapse lifetimes are exactly five times the original values', () =>
   }
 });
 
-test('black-hole mass transfer is exactly one twentieth of its previous rate', () => {
-  const {sim}=game();const hole=body(sim,'bh',6,330,500,9),donor=body(sim,'star',4,430,500);
-  const expected=(.72+9*.075)/20,initial=donor.mass;
+test('black-hole mass transfer is exactly one two-hundredth of the original rate', () => {
+  const {sim}=game();const hole=body(sim,'bh',6,330,500,9),donor=body(sim,'star',4,410,500);
+  const expected=(.72+9*.075)/200,initial=donor.mass;
   sim._updateAccretion(.05);
   assert.ok(Math.abs(initial-donor.mass-expected*.05)<1e-10);
   assert.ok(Math.abs(hole.accretionRate-expected)<1e-10);
@@ -250,8 +245,8 @@ test('softened gravity approaches inverse-square falloff and is finite at the or
   assert.deepEqual(center,{x:0,y:0});
 });
 
-test('remnant gravity applies opposite pair momentum without orbit singularities', () => {
-  const {sim}=game();const hole=body(sim,'bh',6,330,500,9),star=body(sim,'star',2,450,500,1);
+test('neutron-star gravity applies opposite pair momentum without orbit singularities', () => {
+  const {sim}=game();const hole=body(sim,'ns',6,330,500,1.4),star=body(sim,'star',2,450,500,1);
   sim._applyGravity(.01);
   assert.ok(star.vx<0&&hole.vx>0);assert.ok(Math.abs(hole.mass*hole.vx+star.mass*star.vx)<1e-9);
   assert.equal(star.vy,0);assert.equal(hole.vy,0);
@@ -277,7 +272,7 @@ test('neutron-star merger waves are smaller than black-hole merger waves', () =>
     body(sim, kind, 0, 330, 500, kind === 'ns' ? 1.7 : 5);
     body(sim, kind, 0, 331, 500, kind === 'ns' ? 1.7 : 5);
     sim.update(1 / 60);
-    return events.find(event => eventIs(event, 'wave')).power;
+    if(kind==='bh')sim._mergeContacts(6.01);return events.find(event => eventIs(event, 'wave')).power;
   };
   assert.ok(wavePower('ns') < wavePower('bh'));
 });
@@ -285,8 +280,8 @@ test('neutron-star merger waves are smaller than black-hole merger waves', () =>
 test('victory unlocks simultaneous accretion and keeps the completion timer fixed', () => {
   const { sim } = game();
   const hole = body(sim, 'bh', 0, 330, 500, sim.winningMass);
-  const first = body(sim, 'star', 2, 200, 500);
-  const second = body(sim, 'star', 3, 480, 500);
+  const first = body(sim, 'star', 2, 235, 500);
+  const second = body(sim, 'star', 3, 435, 500);
   sim.update(1 / 60);
   const finishedAt = sim.time;
   sim.update(1 / 60);
@@ -321,3 +316,23 @@ test('reaching the seed black-hole mass ends the game with a time bonus', () => 
   advance(sim, 1);
   assert.equal(sim.time, time, 'the completion timer must stop during the ending');
 });
+
+
+test('black holes exert no attraction, receive none, and cannot accrete a separated star',()=>{
+ const {sim}=game();const a=body(sim,'bh',0,300,400,30),b=body(sim,'bh',0,420,400,50),s=body(sim,'star',2,520,400),n=body(sim,'ns',0,300,600,1.4);
+ sim._applyGravity(.1);assert.equal(a.vx,0);assert.equal(a.vy,0);assert.equal(b.vx,0);assert.equal(b.vy,0);
+ sim.bodies=[a,b,s];s.vx=s.vy=0;sim._applyGravity(.1);assert.equal(s.vx,0);assert.equal(s.vy,0);
+ const mass=s.mass;sim._updateAccretion(1);assert.equal(s.mass,mass);assert.equal(a.accretingId,null);assert.equal(b.accretingId,null);
+});
+test('discs start without spin; free fall and centred impacts do not invent angular motion',()=>{
+ const {sim}=game();const a=body(sim,'star',0,200,300),b=body(sim,'star',1,242,300);
+ const initial=a.rotation;assert.equal(a.angularVelocity,0);advance(sim,.1);assert.equal(a.angularVelocity,0);assert.equal(a.rotation,initial);
+ a.x=200;a.y=300;b.x=242;b.y=300;a.vx=100;a.vy=0;b.vx=0;b.vy=0;sim._solveContacts();assert.equal(a.angularVelocity,0);assert.equal(b.angularVelocity,0);
+});
+test('tangential contact creates spin, advances the texture angle and floor friction creates rolling',()=>{
+ const {sim}=game();const a=body(sim,'star',0,200,300),b=body(sim,'star',1,242,300);
+ a.vx=100;a.vy=80;sim._solveContacts();assert.ok(Math.abs(a.angularVelocity)>.1);assert.ok(Math.abs(b.angularVelocity)>.1);
+ const angle=a.rotation;advance(sim,.05);assert.notEqual(a.rotation,angle);
+ sim.bodies=[a];a.y=sim.floor-a.radius+1;a.vx=80;a.vy=0;a.angularVelocity=0;sim._solveBounds();assert.ok(a.angularVelocity>0);assert.ok(a.vx<80);
+});
+
