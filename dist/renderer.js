@@ -97,12 +97,14 @@ export class Renderer{
     }
   }
   _lightPoint(x,y,a,size){const p=this._warp(x,y),c=this.ctx;c.globalAlpha=clamp(a,0,1);c.fillStyle='#bbbfdb';c.fillRect(Math.round(p.x/2)*2,Math.round(p.y/2)*2,size+1,size+1);c.globalAlpha=1;}
-  _einsteinArc(lens,image,r,a){const c=this.ctx,theta=Math.atan2(image.outerY,image.outerX),span=clamp(.08/image.u,.1,Math.PI),steps=this.quality==='low'?12:24;c.fillStyle='#c9c4e5';c.globalAlpha=Math.min(.55,a);for(let i=0;i<steps;i++){const angle=theta-span/2+span*i/(steps-1);c.fillRect(Math.round((lens.x+Math.cos(angle)*r)/2)*2,Math.round((lens.y+Math.sin(angle)*r)/2)*2,2,2);}c.globalAlpha=1;}
+  _einsteinArc(lens,image,r,a){const c=this.ctx,theta=Math.atan2(image.outerY,image.outerX),span=clamp(.08/image.u,.1,TAU),steps=this.quality==='low'?12:24;c.fillStyle='#c9c4e5';for(let side=0;side<(image.u<.04?1:2);side++){const radius=side?Math.hypot(image.innerX,image.innerY):Math.hypot(image.outerX,image.outerY);c.globalAlpha=Math.min(side?.3:.55,a);for(let i=0;i<steps;i++){const angle=theta+side*Math.PI-span/2+span*i/(steps-1);c.fillRect(Math.round((lens.x+Math.cos(angle)*radius)/2)*2,Math.round((lens.y+Math.sin(angle)*radius)/2)*2,2,2);}}c.globalAlpha=1;}
   _arena(){const c=this.ctx;c.strokeStyle='#252436';c.lineWidth=1;c.beginPath();c.moveTo(20,104);c.lineTo(20,798);c.lineTo(680,798);c.lineTo(680,104);c.stroke();c.strokeStyle=this.sim.danger>.1?'#b66a5a':'#3c3544';c.setLineDash([4,10]);c.beginPath();c.moveTo(20,100);c.lineTo(680,100);c.stroke();c.setLineDash([]);c.fillStyle='#706375';c.font='15px monospace';c.textAlign='right';c.fillText('警戒线',674,89);for(let x=40;x<680;x+=20){c.fillStyle=x%100===0?'#60516b':'#302b3d';c.fillRect(x,800,2,x%100===0?7:3);}}
   _material(body){
     let m=this.materials.get(body.id);const cell=this.quality==='low'?5:4,size=Math.ceil(body.radius*2/cell)+4;
-    if(m&&(m.size!==size||m.type!==body.type||m.kind!==body.kind)){this.materials.delete(body.id);m=null;}
-    if(!m){const sprite=document.createElement('canvas');sprite.width=size;sprite.height=size;const context=sprite.getContext('2d'),rng=random(body.id*7123+Math.round(body.seed*1e5)),total=[...this.materials.values()].reduce((n,m)=>n+m.points.length,0),count=Math.min(Math.max(12,Math.floor(Math.PI*(body.radius/cell)**2*.98)),Math.max(12,this.materialLimit-total));
+    const stellarCount=this.sim.bodies.reduce((n,b)=>n+(b.kind==='star'||b.kind==='wd'?1:0),0);
+    const count=Math.min(Math.max(12,Math.floor(Math.PI*(body.radius/cell)**2*.98)),Math.floor(this.materialLimit/Math.max(1,stellarCount)));
+    if(m&&(m.size!==size||m.type!==body.type||m.kind!==body.kind||m.points.length!==count)){this.materials.delete(body.id);m=null;}
+    if(!m){const sprite=document.createElement('canvas');sprite.width=size;sprite.height=size;const context=sprite.getContext('2d'),rng=random(body.id*7123+Math.round(body.seed*1e5));
       const points=Array.from({length:count},()=>({r:Math.sqrt(rng())*.985,theta:rng()*TAU,spin:(rng()>.5?1:-1)*(.03+rng()*.1),jitter:rng()*TAU,shade:rng()}));m={sprite,context,points,size,type:body.type,kind:body.kind,last:-1,cell};this.materials.set(body.id,m);}
     return m;
   }

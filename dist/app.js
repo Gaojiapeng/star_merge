@@ -58,7 +58,7 @@ function updateInfo(){
 function updateUi(){
   $('score').textContent=Math.floor(sim.score).toLocaleString('en-US');if(sim.score>best){best=Math.floor(sim.score);try{localStorage.setItem(storageKey+'-best',String(best));}catch{}}$('best').textContent=best.toLocaleString('en-US');$('timer').textContent=timeText(sim.time);
   const next=STAR_TYPES[sim.nextType];$('next-type').textContent=next.type;$('next-type').style.color=next.color;$('next-mass').textContent=`${massText(next.mass)} M☉`;
-  const mass=Math.max(0,...sim.bodies.filter(b=>b.kind==='bh').map(b=>b.mass));$('bh-mass').textContent=massText(mass);$('mass-progress').style.width=`${clamp(mass/PHYSICS.winningMass*100,0,100)}%`;
+  const mass=sim.state==='ready'?0:Math.max(0,...sim.bodies.filter(b=>b.kind==='bh').map(b=>b.mass));$('bh-mass').textContent=massText(mass);$('mass-progress').style.width=`${clamp(mass/PHYSICS.winningMass*100,0,100)}%`;
   $('field-status').textContent={ready:'等待投放',playing:'同类合成 · 不同类型碰撞',paused:'已暂停',won:'星系正在形成',lost:'观测结束'}[sim.state];$('body-count').textContent=`${sim.bodies.length} 天体`;
   $('ready-overlay').hidden=sim.state!=='ready';$('pause').disabled=!['playing','paused'].includes(sim.state);$('pause').innerHTML=sim.state==='paused'?'<span aria-hidden="true">▷</span> 继续':'<span aria-hidden="true">Ⅱ</span> 暂停';$('pause').setAttribute('aria-label',sim.state==='paused'?'继续游戏':'暂停游戏');
   $('danger').hidden=sim.state!=='playing'||sim.danger<.12;

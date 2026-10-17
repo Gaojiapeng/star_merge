@@ -220,5 +220,13 @@ test('minimal game starts, responds to mobile input, pauses, and reaches its end
       get('setting-quality').onchange({target:{checked:false}});env.tick(.1);
       assert.ok(renderer.particles.length<=1100);
     });
+    await t.test('a crowded field shares a hard material-pixel budget', () => {
+      sim.bodies=[];renderer.reset();
+      for(let i=0;i<100;i++)sim.addBody('star',6,30+i%10*64,150+Math.floor(i/10)*60);
+      renderer.render(1/60);
+      const pixels=[...renderer.materials.values()].reduce((n,m)=>n+m.points.length,0);
+      assert.ok(pixels<=renderer.materialLimit);assert.ok(pixels>0);
+      for(const m of renderer.materials.values())assert.ok(m.points.length>0,'each star retains visible material');
+    });
   } finally { env.restore(); }
 });
