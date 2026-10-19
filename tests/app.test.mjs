@@ -107,6 +107,7 @@ function fixture(html) {
   document.querySelectorAll = selector => {
     if (selector === 'dialog') return dialogs;
     if (selector === '[data-scenario]') return scenarios;
+    if (selector.startsWith('[data-i18n') || selector.startsWith('meta')) return [];
     throw new Error(`Unimplemented fixture selector: ${selector}`);
   };
   document.querySelector = selector => {
@@ -165,8 +166,17 @@ test('minimal game starts, responds to mobile input, pauses, and reaches its end
       assert.equal(get('ready-overlay').hidden,false);
       assert.equal(get('score').textContent,'0');
       assert.equal(get('bh-mass').textContent,'0.00','attract-screen scenery is not actual game progress');
-      assert.equal(sim.winningMass,2000);
+      assert.equal(sim.winningMass,500);
       assert.ok(renderer.optics,'background optics initialized');
+    });
+    await t.test('English is the default and the language can be switched to Chinese', () => {
+      assert.equal(get('setting-lang').value,'en');
+      assert.equal(get('field-status').textContent,'Waiting to drop');
+      get('setting-lang').onchange({target:{value:'zh'}});env.tick(.2);
+      assert.equal(get('field-status').textContent,'等待投放');
+      assert.ok(JSON.parse(env.storage.get('stellar-forge-v2-settings')).lang==='zh','the choice is remembered');
+      get('setting-lang').onchange({target:{value:'en'}});env.tick(.2);
+      assert.equal(get('field-status').textContent,'Waiting to drop');
     });
     await t.test('Space on a focused button preserves native button behavior', () => {
       const event=env.key(get('settings-open'));
@@ -202,8 +212,8 @@ test('minimal game starts, responds to mobile input, pauses, and reaches its end
       get('pause').click();get('settings-open').click();get('settings-close').click();assert.equal(sim.state,'paused');
       get('pause').click();
     });
-    await t.test('the 2000-mass ending keeps advancing the physical and visual clocks', () => {
-      sim.bodies=[];sim.addBody('bh',6,350,600,2000);sim.addBody('star',3,490,600);env.tick(.2);
+    await t.test('the 500-mass ending keeps advancing the physical and visual clocks', () => {
+      sim.bodies=[];sim.addBody('bh',6,350,600,500);sim.addBody('star',3,490,600);env.tick(.2);
       assert.equal(sim.state,'won');assert.equal(get('cinema-caption').hidden,false);
       const elapsed=sim.time;env.tick(13);assert.equal(sim.time,elapsed);
       assert.ok(sim.finaleTime>12&&renderer.isCinematicDone);
@@ -220,6 +230,11 @@ test('minimal game starts, responds to mobile input, pauses, and reaches its end
       assert.ok(renderer.particles.length<=renderer.particleLimit);
       get('setting-quality').onchange({target:{checked:false}});env.tick(.1);
       assert.ok(renderer.particles.length<=1100);
+      renderer.reset();
+      renderer.event({kind:'supernova',variant:'core-collapse',x:350,y:500,radius:340,power:1.3,ejectaRadius:90,layers:[{el:'Fe',color:'#b9c2d6',fraction:.12},{el:'Si',color:'#d2b6e9',fraction:.12},{el:'O/Ne',color:'#8cc5e9',fraction:.2},{el:'H',color:'#c5caff',fraction:.56}]});
+      assert.deepEqual(renderer.effects.map(e=>e.kind).sort(),['bounce','shells','shock'],'collapse shows bounce, element shells and the blast wave');
+      assert.ok(renderer.particles.length>0&&renderer.particles.every(p=>p.layered),'ejecta sparks come from the element shells');
+      env.tick(2);assert.ok(renderer.effects.some(e=>e.kind==='shells'));
     });
     await t.test('long press continuously drops and pause cancels the held pointer',()=>{
       sim.restart();sim.start();sim.bodies=[];env.tick(.5);let drops=0;const original=sim.drop.bind(sim);sim.drop=x=>{drops++;return original(x);};

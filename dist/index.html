@@ -1,26 +1,48 @@
 <!doctype html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="application-version" content="3.0.1"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#0b0a11"><meta name="description" content="像素恒星合成游戏：从红矮星到星系中心。"><title>合成大恒星</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0a11'/%3E%3Cpath d='M16 3L19 13L29 16L19 19L16 29L13 19L3 16L13 13Z' fill='%23efbd95'/%3E%3C/svg%3E"><link rel="stylesheet" href="./style.css?v=3.0.1"></head>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="application-version" content="3.1.0"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#05060d"><meta name="description" content="A star-merging game: from red dwarfs to the heart of a galaxy."><title>Stellar Forge</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2305060d'/%3E%3Cellipse cx='16' cy='16' rx='13' ry='4.5' fill='none' stroke='%23a99cff' stroke-width='1.4' transform='rotate(-20 16 16)'/%3E%3Cpath d='M16 5L18 14L27 16L18 18L16 27L14 18L5 16L14 14Z' fill='%23ffcf8a'/%3E%3C/svg%3E"><link rel="stylesheet" href="./style.css?v=3.1.0"></head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-accent" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe0a8"/><stop offset=".55" stop-color="#ff9fb4"/><stop offset="1" stop-color="#a99cff"/></linearGradient>
+    <symbol id="i-mark" viewBox="0 0 32 32"><ellipse cx="16" cy="16" rx="14" ry="4.6" fill="none" stroke="currentColor" stroke-opacity=".55" stroke-width="1.3" transform="rotate(-22 16 16)"/><path d="M16 3.5l2.2 10.3L28.5 16l-10.3 2.2L16 28.5l-2.2-10.3L3.5 16l10.3-2.2z" fill="url(#g-accent)"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="10" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6.5" y="5" width="3.6" height="14" rx="1.2" fill="currentColor"/><rect x="13.9" y="5" width="3.6" height="14" rx="1.2" fill="currentColor"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" fill="currentColor"/></symbol>
+    <symbol id="i-scope" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-drop" viewBox="0 0 24 24"><circle cx="12" cy="15" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 2.5v6M9 6l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-restart" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M18.5 3.5v4h-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </defs>
+</svg>
 <main class="game">
-  <header><h1><span aria-hidden="true">✦</span> 合成大恒星</h1><button id="settings-open" class="icon-button" title="选项" aria-label="游戏选项">☷</button></header>
-  <section class="hud" aria-label="游戏状态"><div><span class="label">得分</span><strong id="score">0</strong></div><div class="record"><span class="label">最佳 <b id="best">0</b></span><time id="timer">00:00</time></div><div class="next"><span class="label">下一颗</span><span id="next-type" class="type-chip">M</span><span id="next-mass">0.25 M☉</span></div></section>
-  <div class="goal"><span>黑洞 <b id="bh-mass">0</b> / 2,000 M☉</span><div class="track"><div id="mass-progress"></div></div></div>
-  <section id="canvas-wrap" class="stage" aria-label="恒星合成场">
-    <canvas id="universe" width="700" height="820" tabindex="0" aria-label="拖动调整位置，点击或长按连续投放。左右方向键移动，空格投放，P暂停。查看模式下点击天体显示内部元素。"></canvas>
-    <div id="danger" class="danger" hidden>已到警戒线 · 尽快合成</div>
-    <div class="board-status"><span id="field-status">等待投放</span><span id="body-count"></span></div>
-    <div id="ready-overlay" class="overlay ready"><span class="small-star" aria-hidden="true">✦</span><h2>从一颗星开始。</h2><p>同类相遇，合成更大的恒星。</p><button id="start" class="primary">开始合成</button><span class="hint">点击投放 · 长按连续投放</span></div>
-    <div id="state-overlay" class="overlay" hidden><h2 id="state-title">已暂停</h2><p id="state-detail"></p><div id="end-stats"></div><button id="state-action" class="primary">继续游戏</button></div>
-    <div id="cinema-caption" class="cinema" hidden><span>数亿年后</span><h2>星系，有了自己的心脏。</h2></div>
-    <div id="body-info" class="body-info" hidden><button id="info-close" class="icon-button" aria-label="关闭天体信息">×</button><strong id="info-name"></strong><span id="info-mass"></span><div id="info-layers"></div><p id="info-evolution"></p></div>
+  <header class="topbar"><div class="brand"><svg class="mark" aria-hidden="true"><use href="#i-mark"/></svg><div><h1 data-i18n="brand">Stellar Forge</h1><span class="tagline" data-i18n="tagline">MERGE THE STARS</span></div></div><button id="settings-open" class="icon-button" title="Options" aria-label="Game options" data-i18n-title="options" data-i18n-aria="optionsAria"><svg aria-hidden="true"><use href="#i-gear"/></svg></button></header>
+  <section class="hud">
+    <div class="stat score"><span class="label" data-i18n="score">Score</span><strong id="score">0</strong></div>
+    <div class="stat record"><span class="label"><span data-i18n="best">Best</span> <b id="best">0</b></span><time id="timer">00:00</time></div>
+    <div class="stat next"><span class="label" data-i18n="next">Next</span><div class="next-row"><span id="next-type" class="type-chip">M</span><span id="next-mass">0.25 M☉</span></div></div>
   </section>
-  <div class="toolbar"><button id="pause" disabled aria-label="暂停游戏"><span aria-hidden="true">Ⅱ</span> 暂停</button><button id="mode" aria-pressed="false"><span aria-hidden="true">◎</span> 查看</button><button id="restart"><span aria-hidden="true">↻</span> 重来</button></div>
-  <div class="sequence" aria-label="恒星合成顺序"><span style="--color:#ff7950">M</span><i>›</i><span style="--color:#ffc36c">K</span><i>›</i><span style="--color:#ffe194">G</span><i>›</i><span style="--color:#fff0cc">F</span><i>›</i><span style="--color:#d7edff">A</span><i>›</i><span style="--color:#accbff">B</span><i>›</i><span style="--color:#c5b9ff">O</span></div>
+  <div class="goal"><span class="goal-label"><i class="bh-dot" aria-hidden="true"></i><span data-i18n="blackHole">Black hole</span> <b id="bh-mass">0</b><span class="of"> / 500 M☉</span></span><div class="track"><div id="mass-progress"></div></div></div>
+  <section id="canvas-wrap" class="stage">
+    <canvas id="universe" width="700" height="820" tabindex="0" aria-label="Drag to aim, tap or hold to drop." data-i18n-aria="canvasAria"></canvas>
+    <div id="danger" class="danger" hidden><i aria-hidden="true"></i><span data-i18n="danger">Past the danger line · merge fast</span></div>
+    <div class="board-status"><span id="field-status">Waiting to drop</span><span id="body-count"></span></div>
+    <div id="ready-overlay" class="overlay ready"><svg class="hero-mark" aria-hidden="true"><use href="#i-mark"/></svg><h2 data-i18n="readyTitle">Start with a single star.</h2><p data-i18n-html="readyText">Match stars to forge bigger ones;<br>let massive stars collapse and feed a black hole to 500 M☉.</p><button id="start" class="primary" data-i18n="start">Start</button><span class="hint" data-i18n="hint">Tap to drop · hold to keep dropping · Space / arrow keys</span></div>
+    <div id="state-overlay" class="overlay" hidden><h2 id="state-title">Paused</h2><p id="state-detail"></p><div id="end-stats"></div><button id="state-action" class="primary">Resume</button></div>
+    <div id="cinema-caption" class="cinema" hidden><span data-i18n="cinemaKicker">Hundreds of millions of years later</span><h2 data-i18n="cinemaTitle">The galaxy has a heart.</h2></div>
+    <div id="body-info" class="body-info" hidden><button id="info-close" class="icon-button" aria-label="Close body info" data-i18n-aria="closeInfo"><svg aria-hidden="true"><use href="#i-close"/></svg></button><div class="info-head"><i id="info-swatch" class="swatch" aria-hidden="true"></i><strong id="info-name"></strong><span id="info-mass"></span></div><div id="info-layers"></div><p id="info-evolution"></p></div>
+  </section>
+  <div class="toolbar"><button id="pause" disabled aria-label="Pause game"><svg aria-hidden="true"><use href="#i-pause"/></svg><span>Pause</span></button><button id="mode" aria-pressed="false"><svg aria-hidden="true"><use href="#i-scope"/></svg><span>Inspect</span></button><button id="restart"><svg aria-hidden="true"><use href="#i-restart"/></svg><span data-i18n="restart">Restart</span></button></div>
+  <div class="sequence"><span style="--c:#ff7a4c">M</span><span style="--c:#ffa84e">K</span><span style="--c:#ffd46a">G</span><span style="--c:#fbecc4">F</span><span style="--c:#d6e6ff">A</span><span style="--c:#8db8ff">B</span><span class="o" style="--c:#a49cff">O9V</span><span class="o" style="--c:#8a78ff">O6V</span><span class="o" style="--c:#e0d6ff">O3V</span><em data-i18n="collapse">collapse</em><span class="bh" style="--c:#ffcf8a">BH</span></div>
 </main>
-<dialog id="settings-dialog"><div class="dialog-title"><h2>游戏选项</h2><button id="settings-close" class="icon-button" aria-label="关闭选项">×</button></div><label>音效<input id="setting-sound" type="checkbox"></label><label>恒星内部剖面<input id="setting-layers" type="checkbox" checked></label><label>光线偏折<input id="setting-lensing" type="checkbox" checked></label><label>更多粒子<input id="setting-quality" type="checkbox" checked></label><label>减弱震动与闪光<input id="setting-motion" type="checkbox"></label><p>同型恒星合成；黑洞达到 2,000 M☉ 通关。<br>中子星不会因吸积变成黑洞，仍可并合。<br>查看模式可点击天体，了解质量与元素分层。</p></dialog>
+<dialog id="settings-dialog"><div class="dialog-title"><h2 data-i18n="options">Options</h2><button id="settings-close" class="icon-button" aria-label="Close options" data-i18n-aria="closeOptions"><svg aria-hidden="true"><use href="#i-close"/></svg></button></div>
+  <label><span><span data-i18n="language">Language</span><small data-i18n="languageDesc">Interface language</small></span><select id="setting-lang"><option value="en">English</option><option value="zh">中文</option></select></label>
+  <label><span><span data-i18n="sound">Sound</span><small data-i18n="soundDesc">Cues for merges, supernovae and gravitational waves</small></span><input id="setting-sound" type="checkbox"></label>
+  <label><span><span data-i18n="layers">Stellar interiors</span><small data-i18n="layersDesc">Cut open each star to show its element layers</small></span><input id="setting-layers" type="checkbox" checked></label>
+  <label><span><span data-i18n="lensing">Gravitational lensing</span><small data-i18n="lensingDesc">Black holes and neutron stars bend background light</small></span><input id="setting-lensing" type="checkbox" checked></label>
+  <label><span><span data-i18n="quality">High quality</span><small data-i18n="qualityDesc">More particles and sharper optics</small></span><input id="setting-quality" type="checkbox" checked></label>
+  <label><span><span data-i18n="motion">Reduce shake &amp; flashes</span><small data-i18n="motionDesc">No camera shake, flashes or background drift</small></span><input id="setting-motion" type="checkbox"></label>
+  <p data-i18n="optionsNote"></p></dialog>
 <div id="toast" class="toast" role="status" hidden></div>
-<script type="module" src="./app.js?v=3.0.1"></script>
+<script type="module" src="./app.js?v=3.1.0"></script>
 </body></html>
-
-

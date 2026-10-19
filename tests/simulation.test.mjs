@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Simulation, STAR_TYPES, PHYSICS, gravityAt, calculateTimeBonus } from '../dist/simulation.js';
+import { Simulation, STAR_TYPES, PHYSICS, gravityAt, calculateTimeBonus, spectralOf, canFuse, stellarLayers, stellarPhase } from '../dist/simulation.js';
 
 function game(seed = 417) {
   const events = [];
@@ -108,32 +108,98 @@ test('core collapse respects the approximate 8 and 25 solar-mass boundaries', ()
   }
 });
 
-test('two O stars can merge into a heavier O star before becoming a black hole', () => {
+test('O stars merge only within a subclass: O9V → O6V → O3V, and O3V is final', () => {
   const { sim } = game();
-  const first = body(sim, 'star', 6, 330, 500);
-  const second = body(sim, 'star', 6, 331, 500);
-  const total = first.mass + second.mass;
+  body(sim, 'star', 6, 330, 500);
+  body(sim, 'star', 6, 331, 500);
   sim.update(1 / 60);
   assert.equal(sim.bodies.length, 1);
-  assert.equal(sim.bodies[0].kind, 'star');
-  assert.equal(sim.bodies[0].type, 6);
-  assert.equal(sim.bodies[0].mass, total);
-  sim.bodies[0].collapseAt = 0;
+  assert.equal(spectralOf(sim.bodies[0]).type, 'O6V');
+  assert.equal(sim.bodies[0].mass, 32);
+  const o6 = sim.bodies[0];
+  o6.mergeGrace = 0;
+  const twin = body(sim, 'star', 6, o6.x + 1, o6.y, 32);
   sim.update(1 / 60);
-  assert.equal(sim.bodies[0].kind, 'bh');
+  assert.equal(sim.bodies.length, 1);
+  assert.equal(spectralOf(sim.bodies[0]).type, 'O3V');
+  assert.ok(!sim.bodies.some(value => value.id === twin.id));
+  const o3 = sim.bodies[0];
+  o3.mergeGrace = 0;
+  body(sim, 'star', 6, o3.x + 1, o3.y, 64);
+  advance(sim, .3);
+  assert.equal(sim.bodies.length, 2, 'two O3V stars never merge');
+  assert.ok(sim.bodies.every(value => spectralOf(value).type === 'O3V'));
 });
 
-test('black holes merge only after six seconds of uninterrupted contact and emit waves', () => {
- const {sim,events}=game();const a=body(sim,'bh',0,330,500,5),b=body(sim,'bh',0,331,500,6);
- sim._mergeContacts(3);assert.equal(sim.bodies.length,2);
- b.x=600;sim._mergeContacts(1);b.x=331;sim._mergeContacts(3);assert.equal(sim.bodies.length,2);
- sim._mergeContacts(3.01);assert.equal(sim.bodies.length,1);assert.ok(sim.bodies[0].mass>9);assert.ok(events.some(e=>e.kind==='wave'));
+test('different O subclasses do not merge, and O6V collapses to a black hole', () => {
+  const { sim } = game();
+  const o9 = body(sim, 'star', 6, 330, 500, 16), o6 = body(sim, 'star', 6, 331, 500, 32);
+  advance(sim, .3);
+  assert.equal(sim.bodies.length, 2);
+  assert.ok(!canFuse(o9, o6));
+  o6.collapseAt = 0;o9.collapseAt = 0;
+  sim.update(1 / 60);
+  assert.equal(sim.bodies.find(value => value.id === o6.id).kind, 'bh');
+  assert.equal(sim.bodies.find(value => value.id === o9.id).kind, 'ns');
 });
+
+test('touching black holes spiral in for five seconds, then coalesce with a wave', () => {
+  const { sim, events } = game();
+  const a = body(sim, 'bh', 0, 330, 700, 5), b = body(sim, 'bh', 0, 331, 700, 6);
+  sim.update(1 / 60);
+  assert.ok(events.some(event => event.kind === 'inspiral' && event.duration === PHYSICS.compactMergerDuration));
+  assert.equal(sim.mergers.length, 1);
+  assert.equal(a.mergingWith, b.id);
+  advance(sim, 2.5);
+  assert.equal(sim.bodies.length, 2, 'still orbiting halfway through the inspiral');
+  assert.ok(a.mergerProgress > .45 && a.mergerProgress < .6);
+  const momentum = (a.vx * a.mass + b.vx * b.mass);
+  assert.ok(Number.isFinite(momentum));
+  for (const value of [a, b]) {
+    assert.ok(value.x - value.radius >= sim.wallLeft - 1e-6 && value.x + value.radius <= sim.wallRight + 1e-6);
+    assert.ok(value.y + value.radius <= sim.floor + 1e-6, 'the binary stays inside the chamber');
+  }
+  advance(sim, 2.6);
+  assert.equal(sim.bodies.length, 1);
+  assert.equal(sim.bodies[0].kind, 'bh');
+  assert.ok(Math.abs(sim.bodies[0].mass - 11) < 1e-9);
+  assert.equal(sim.mergers.length, 0);
+  assert.ok(events.some(event => event.kind === 'wave' && event.variant === 'black-hole-merger'));
+});
+
+test('a white dwarf touching a black hole is swallowed after the inspiral', () => {
+  const { sim, events } = game();
+  const hole = body(sim, 'bh', 0, 330, 700, 9), dwarf = body(sim, 'wd', 0, 330 + 0, 700, 0.9);
+  dwarf.x = hole.x + hole.radius + dwarf.radius;
+  dwarf.y = hole.y;
+  sim.update(1 / 60);
+  assert.equal(hole.mergingWith, dwarf.id);
+  advance(sim, PHYSICS.compactMergerDuration + .1);
+  assert.equal(sim.bodies.length, 1);
+  assert.equal(sim.bodies[0].kind, 'bh');
+  assert.ok(Math.abs(sim.bodies[0].mass - 9.9) < 1e-9);
+  assert.ok(events.some(event => event.kind === 'wave' && event.variant === 'white-dwarf-disruption'));
+});
+
+test('a black hole stops feeding while it spirals into a partner', () => {
+  const { sim } = game();
+  const a = body(sim, 'bh', 0, 300, 700, 9), b = body(sim, 'bh', 0, 300, 700, 9), donor = body(sim, 'star', 2, 300, 700);
+  b.x = a.x + a.radius + b.radius; donor.x = a.x - a.radius - donor.radius; donor.y = a.y;
+  sim.update(1 / 60);
+  assert.ok(a.mergingWith && b.mergingWith);
+  const mass = donor.mass;
+  advance(sim, .5);
+  assert.equal(donor.lockedBy, null);
+  assert.ok(Math.abs(donor.mass - mass) < 1e-9);
+});
+
 test('two neutron stars merge into a black hole and emit gravitational waves', () => {
   const { sim, events } = game();
   body(sim, 'ns', 0, 330, 500, 1.7);
   body(sim, 'ns', 0, 331, 500, 1.7);
   sim.update(1 / 60);
+  assert.equal(sim.bodies.length, 2, 'neutron stars first spiral together');
+  advance(sim, PHYSICS.compactMergerDuration + .1);
   assert.equal(sim.bodies.length, 1);
   assert.equal(sim.bodies[0].kind, 'bh');
   assert.ok(sim.bodies[0].mass > 2.3);
@@ -152,19 +218,17 @@ test('a low-mass main-sequence star ages into a white dwarf after five minutes',
   assert.ok(events.some(event => eventIs(event, 'evolve')));
 });
 
-test('core-collapse blasts destroy close stars and push farther stars outward', () => {
+test('core-collapse blasts push every nearby body outward and destroy nothing', () => {
   const { sim, events } = game();
   const progenitor = body(sim, 'star', 6, 330, 500, 32);
   progenitor.collapseAt = 0;
   const close = body(sim, 'star', 0, 450, 500);
   const far = body(sim, 'star', 3, 560, 500);
   sim.update(1 / 60);
-  assert.ok(!sim.bodies.some(value => value.id === close.id), 'adjacent star should be destroyed');
-  assert.ok(sim.bodies.some(value => value.id === far.id), 'distant star should survive');
-  assert.equal(far.vx, 0, 'a distant star is not hit before the shock front arrives');
-  sim._updateShocks(2.4);
-  assert.ok(far.vx > 0, 'survivor receives an outward impulse when the shock arrives');
-  assert.ok(events.some(event => eventIs(event, 'supernova') && event.destroyed > 0));
+  assert.ok(sim.bodies.some(value => value.id === close.id), 'even an adjacent star survives');
+  assert.ok(close.vx > 0 && far.vx > 0, 'both are pushed outward in the same frame as the collapse');
+  assert.equal(PHYSICS.supernovaPush, 6100, 'the blast push is ten times the original 610');
+  assert.ok(events.some(event => eventIs(event, 'supernova') && event.destroyed === 0));
 });
 
 test('a black hole drains exactly one donor at a time, shrinking it and conserving mass', () => {
@@ -203,8 +267,8 @@ test('a white dwarf crossing 1.4 solar masses self-destructs in a Type Ia supern
   sim.update(1 / 60);
   assert.ok(!sim.bodies.some(value => value.id === dwarf.id), 'the dwarf leaves no compact remnant');
   assert.ok(events.some(event => eventIs(event, 'supernova') && event.variant === 'Ia'));
-  sim._updateShocks(2.4);
-  assert.ok(distant.vx > 0, 'Type Ia ejecta also mix the remaining stars');
+  // Same frame, full 10× push: the original 610 gave this star well under 300 px/s.
+  assert.ok(distant.vx > 1000, 'Type Ia blasts push instantly with the 10x strength');
 });
 
 test('core-collapse lifetimes are exactly five times the original values', () => {
@@ -232,11 +296,11 @@ test('neutron-star accretion never forms a black hole; excess mass is ejected', 
   assert.ok(Math.abs(neutron.mass+donor.mass+sim.stats.ejected-total)<1e-9);
 });
 
-test('the win threshold is 2000 solar masses and 40 no longer wins', () => {
+test('the win threshold is 500 solar masses and 40 no longer wins', () => {
   const {sim}=game();const hole=body(sim,'bh',6,330,500,40);sim._checkVictory();
-  assert.equal(sim.state,'playing');assert.equal(sim.winningMass,40*50);
-  hole.mass=1999.99;sim._checkVictory();assert.equal(sim.state,'playing');
-  hole.mass=2000;sim._checkVictory();assert.equal(sim.state,'won');
+  assert.equal(sim.state,'playing');assert.equal(sim.winningMass,500);
+  hole.mass=499.99;sim._checkVictory();assert.equal(sim.state,'playing');
+  hole.mass=500;sim._checkVictory();assert.equal(sim.state,'won');
 });
 
 test('softened gravity approaches inverse-square falloff and is finite at the origin', () => {
@@ -245,11 +309,11 @@ test('softened gravity approaches inverse-square falloff and is finite at the or
   assert.deepEqual(center,{x:0,y:0});
 });
 
-test('neutron-star gravity applies opposite pair momentum without orbit singularities', () => {
-  const {sim}=game();const hole=body(sim,'ns',6,330,500,1.4),star=body(sim,'star',2,450,500,1);
-  sim._applyGravity(.01);
-  assert.ok(star.vx<0&&hole.vx>0);assert.ok(Math.abs(hole.mass*hole.vx+star.mass*star.vx)<1e-9);
-  assert.equal(star.vy,0);assert.equal(hole.vy,0);
+test('compact objects and stars exert no gravitational attraction on each other', () => {
+  const {sim}=game();
+  const bodies=[body(sim,'ns',6,330,500,1.4),body(sim,'wd',0,200,500,1),body(sim,'bh',0,520,500,20),body(sim,'star',2,430,500,1),body(sim,'star',4,260,420)];
+  sim._applyGravity(.5);
+  for(const value of bodies){assert.equal(value.vx,0);assert.equal(value.vy,0);}
 });
 
 test('a neutron star accretes matter and emits repeated regular X-ray bursts', () => {
@@ -271,8 +335,8 @@ test('neutron-star merger waves are smaller than black-hole merger waves', () =>
     const { sim, events } = game();
     body(sim, kind, 0, 330, 500, kind === 'ns' ? 1.7 : 5);
     body(sim, kind, 0, 331, 500, kind === 'ns' ? 1.7 : 5);
-    sim.update(1 / 60);
-    if(kind==='bh')sim._mergeContacts(6.01);return events.find(event => eventIs(event, 'wave')).power;
+    advance(sim, PHYSICS.compactMergerDuration + .1);
+    return events.find(event => eventIs(event, 'wave')).power;
   };
   assert.ok(wavePower('ns') < wavePower('bh'));
 });
@@ -339,4 +403,174 @@ test('tangential contact creates spin, advances the texture angle and floor fric
 
 test('a glancing wall collision transfers tangential momentum into disc rotation',()=>{
  const {sim}=game();const a=body(sim,'star',0,sim.wallRight-18,300);a.vx=100;a.vy=80;sim._solveBounds();assert.ok(a.angularVelocity<0);assert.ok(a.vy<80);assert.ok(a.vx<0);
+});
+
+test('the chamber has a ceiling: fast stars bounce back down and never leave', () => {
+  const { sim } = game();
+  const star = body(sim, 'star', 1, 330, 120);
+  star.vy = -1100;
+  let highest = Infinity;
+  for (let i = 0; i < 30; i++) { sim.update(1 / 60); highest = Math.min(highest, star.y - star.radius); }
+  assert.ok(highest >= sim.ceiling - 1e-6, 'the star stays below the ceiling');
+  assert.ok(star.vy > 0, 'it rebounds downward');
+});
+
+test('fast wall impacts rebound while slow contacts stay damped', () => {
+  const { sim } = game();
+  const fast = body(sim, 'star', 0, sim.wallRight - 18, 300);
+  fast.vx = 900; fast.vy = 0;
+  sim._solveBounds();
+  assert.ok(fast.vx < -300);
+  const slow = body(sim, 'star', 0, sim.wallLeft + 18, 500);
+  slow.vx = -100; slow.vy = 0;
+  sim._solveBounds();
+  assert.ok(slow.vx > 0 && slow.vx <= 20);
+});
+
+test('an inspiral follows the same path whatever surrounds it, inside every bound', () => {
+  const run = crowd => {
+    const { sim } = game();
+    const a = body(sim, 'bh', 0, 80, 760, 30), b = body(sim, 'bh', 0, 80, 760, 30);
+    a.x = sim.wallLeft + a.radius; a.y = sim.floor - a.radius;
+    b.x = a.x + a.radius + b.radius; b.y = a.y;
+    if (crowd) for (const [type, x, y] of [[2, 240, 740], [3, 120, 640], [1, 60, 600], [4, 260, 560]]) body(sim, 'star', type, x, y);
+    const path = [];
+    sim.update(1 / 60);
+    for (let i = 0; i < 290; i++) {
+      sim.update(1 / 60);
+      for (const value of [a, b]) {
+        assert.ok(value.x - value.radius >= sim.wallLeft - 1e-6 && value.x + value.radius <= sim.wallRight + 1e-6, 'within the walls');
+        assert.ok(value.y - value.radius >= sim.ceiling - 1e-6 && value.y + value.radius <= sim.floor + 1e-6, 'within floor and ceiling');
+      }
+      if (i > 15 && i % 10 === 0) path.push(+a.x.toFixed(6), +a.y.toFixed(6), +b.x.toFixed(6), +b.y.toFixed(6));
+    }
+    return path;
+  };
+  assert.deepEqual(run(true), run(false));
+});
+
+test('supernova shocks and X-ray bursts do not deflect a spiralling binary', () => {
+  const { sim } = game();
+  const a = body(sim, 'bh', 0, 330, 600, 9), b = body(sim, 'bh', 0, 330, 600, 9);
+  b.x = a.x + a.radius + b.radius;
+  sim.update(1 / 60);
+  sim._blast(330, 760, -1, { power: 1.5, radius: 400, killRadius: 0 });
+  assert.equal(a.vx, 0); assert.equal(a.vy, 0); assert.equal(b.vx, 0); assert.equal(b.vy, 0);
+});
+
+test('X-ray bursts push nearby bodies ten times harder than the original 64', () => {
+  const { sim } = game();
+  const neutron = body(sim, 'ns', 0, 330, 500, 1.4), near = body(sim, 'star', 0, 425, 500);
+  sim._xrayBurst(neutron);
+  assert.equal(PHYSICS.xrayBurstPush, 640);
+  assert.ok(Math.abs(near.vx - (1 - 95 / 190) * 640) < 1e-9);
+  assert.ok(Math.abs(near.vy + 80) < 1e-9);
+});
+
+test('X-ray bursts leave the star being accreted in place', () => {
+  const { sim } = game();
+  const neutron = body(sim, 'ns', 0, 330, 500, 1.4), donor = body(sim, 'star', 2, 400, 500), other = body(sim, 'star', 0, 260, 500);
+  neutron.accretingId = donor.id; donor.lockedBy = neutron.id;
+  sim._xrayBurst(neutron);
+  assert.equal(donor.vx, 0); assert.equal(donor.vy, 0);
+  assert.ok(other.vx < 0, 'other nearby stars are still pushed');
+});
+
+test('a black hole and a neutron star spiral together and merge', () => {
+  for (const [holeMass, variant] of [[6, 'neutron-star-disruption'], [20, 'neutron-star-plunge']]) {
+    const { sim, events } = game();
+    const hole = body(sim, 'bh', 0, 330, 700, holeMass), neutron = body(sim, 'ns', 0, 330, 700, 1.5);
+    neutron.x = hole.x + hole.radius + neutron.radius;
+    sim.update(1 / 60);
+    assert.equal(hole.mergingWith, neutron.id);
+    advance(sim, PHYSICS.compactMergerDuration + .1);
+    assert.equal(sim.bodies.length, 1);
+    assert.equal(sim.bodies[0].kind, 'bh');
+    assert.ok(Math.abs(sim.bodies[0].mass - holeMass - 1.5) < 1e-9);
+    const wave = events.find(event => event.kind === 'wave');
+    assert.equal(wave.variant, variant);
+    assert.equal(wave.disrupted, holeMass < 10);
+  }
+});
+
+test('stellar interiors evolve continuously and fill the whole star', () => {
+  const { sim } = game();
+  for (const [type, mass] of [[0, 0.25], [1, 0.5], [2, 1], [3, 2], [4, 4], [5, 8], [6, 16], [6, 32], [6, 64]]) {
+    const star = body(sim, 'star', type, 330, 500, mass);
+    const life = mass >= 8 ? star.collapseAt : PHYSICS.whiteDwarfAge;
+    let previous = null;
+    for (let step = 0; step <= 400; step++) {
+      star.age = life * step / 400;
+      const layers = stellarLayers(star);
+      assert.ok(Math.abs(layers.reduce((sum, layer) => sum + layer.fraction, 0) - 1) < 1e-9, `${mass} M☉ fills the disc`);
+      assert.ok(layers.every(layer => layer.el && layer.name && /^#[0-9a-f]{6}$/.test(layer.color)));
+      // Boundaries (cumulative area per element) move by small steps, never jump.
+      const edges = new Map();let area = 0;
+      for (const layer of layers) { area += layer.fraction; edges.set(layer.el, area); }
+      if (previous) for (const [el, edge] of edges) if (previous.has(el)) assert.ok(Math.abs(edge - previous.get(el)) < 0.06, `${mass} M☉ ${el} at step ${step}`);
+      previous = edges;
+    }
+  }
+});
+
+test('massive stars burn hydrogen first, then build an onion inward', () => {
+  const { sim } = game();
+  const star = body(sim, 'star', 6, 330, 500, 32);
+  star.age = star.collapseAt * 0.3;
+  assert.equal(stellarPhase(star).late, 0, 'core hydrogen burning dominates the lifetime');
+  assert.deepEqual(stellarLayers(star).map(layer => layer.el).slice(0, 1), ['H→He']);
+  star.age = star.collapseAt;
+  assert.deepEqual(stellarLayers(star).map(layer => layer.el).slice(0, 5), ['Fe', 'Si', 'O/Ne', 'C/O', 'He']);
+  const dwarf = body(sim, 'star', 0, 330, 500, 0.25);
+  dwarf.age = 100;
+  assert.deepEqual(stellarLayers(dwarf).map(layer => layer.el), ['H+He'], 'an M dwarf stays fully mixed');
+});
+
+test('star sizes follow the reference watermelon ladder and drops are uniform over M–B', () => {
+  const scale = 660 / 720, expected = [52, 78, 108, 119, 153, 183, 258].map(d => d / 2 * scale);
+  STAR_TYPES.forEach((type, i) => assert.ok(Math.abs(type.radius - expected[i]) < 1e-9, type.type));
+  const { sim } = game();
+  for (const [mass, d] of [[16, 258], [32, 308], [64, 404]]) assert.ok(Math.abs(sim.addBody('star', 6, 330, 500, mass).radius - d / 2 * scale) < 1e-9);
+  const counts = new Array(7).fill(0);
+  for (let i = 0; i < 6000; i++) counts[sim._rollNext()]++;
+  assert.equal(counts[6], 0, 'O stars are never dropped');
+  for (let i = 0; i < 6; i++) assert.ok(counts[i] > 850 && counts[i] < 1150, `class ${i} appears about 1/6 of the time`);
+  assert.ok(sim.dropHeight(5) - STAR_TYPES[5].radius >= sim.ceiling, 'even a dropped B star clears the ceiling');
+});
+
+test('donors stay attached to the compact object feeding on them', () => {
+  for (const kind of ['bh', 'ns', 'wd']) {
+    const { sim } = game();
+    const source = body(sim, kind, 0, 330, 600, kind === 'bh' ? 20 : kind === 'ns' ? 1.4 : 0.8), donor = body(sim, 'star', 3, 330, 600);
+    donor.x = source.x + source.radius + donor.radius + (kind === 'bh' ? 2 : 30);
+    sim.update(1 / 60);
+    assert.equal(source.accretingId, donor.id, `${kind} captures the donor`);
+    donor.vx = 900; donor.vy = -300;
+    advance(sim, 1.5);
+    assert.equal(source.accretingId, donor.id, `${kind} keeps feeding after a kick`);
+    assert.ok(Math.abs(Math.hypot(donor.x - source.x, donor.y - source.y) - source.radius - donor.radius) < 2, `${kind} donor stays in contact`);
+  }
+});
+
+test('interior change starts at birth so it reads as a lifetime gauge', () => {
+  const { sim } = game();
+  for (const [type, mass] of [[2, 1], [4, 4], [6, 32]]) {
+    const star = body(sim, 'star', type, 330, 500, mass);
+    star.age = 0;
+    const birth = stellarLayers(star);
+    star.age = (mass >= 8 ? star.collapseAt : PHYSICS.whiteDwarfAge) * 0.1;
+    const early = stellarLayers(star);
+    assert.notDeepEqual(early, birth, `${mass} M☉ has visibly evolved after 10% of its life`);
+    assert.ok(Math.abs(stellarPhase(star).progress - 0.1) < 1e-9);
+  }
+});
+
+test('core-collapse events carry the onion so the ejecta can be drawn shell by shell', () => {
+  const { sim, events } = game();
+  const star = body(sim, 'star', 6, 330, 500, 32);
+  star.age = star.collapseAt;
+  sim.update(1 / 60);
+  const blast = events.find(event => event.kind === 'supernova');
+  assert.deepEqual(blast.layers.map(layer => layer.el).slice(0, 5), ['Fe', 'Si', 'O/Ne', 'C/O', 'He']);
+  assert.ok(Math.abs(blast.layers.reduce((sum, layer) => sum + layer.fraction, 0) - 1) < 1e-9);
 });
