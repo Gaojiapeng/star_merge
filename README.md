@@ -2,6 +2,8 @@
 
 A single-screen star-merging game in the spirit of *Suika* / 合成大西瓜. Drop stars, merge matching ones into bigger stars, let massive stars explode, and grow a black hole into the heart of a galaxy.
 
+**▶ [Play in your browser](https://gaojiapeng.github.io/star_merge/)**
+
 Runs in any modern browser, desktop or mobile. English by default; 中文 is available under **Options → Language**.
 
 ## How to play
