@@ -1,59 +1,47 @@
-# Stellar Forge
+# Stellar Forge · 合成大恒星
 
-A single-screen, mobile-first star-merging game in the spirit of 合成大西瓜 (Suika). Drop stars, merge equal classes up the ladder M → K → G → F → A → B → O9V → O6V → O3V, let massive stars collapse into neutron stars and black holes, and grow a black hole to 500 M☉ to win. Rendering includes a Schwarzschild lensing pass with a ray-traced accretion disk, layered supernova ejecta and evolving stellar interiors.
+A single-screen star-merging game in the spirit of *Suika* / 合成大西瓜. Drop stars, merge matching ones into bigger stars, let massive stars explode, and grow a black hole into the heart of a galaxy.
 
-- Play: serve `dist/` (`npm run dev`, then open http://127.0.0.1:4173). No build step or dependencies.
-- Test: `npm test`.
-- Language: English by default; switch to 中文 under Options → Language (remembered per browser).
+Runs in any modern browser, desktop or mobile. English by default; 中文 is available under **Options → Language**.
 
-The detailed design notes below are in Chinese.
+## How to play
 
----
+- **Drop:** tap or click in the field. Hold to keep dropping, and drag to aim. On a keyboard, use the arrow keys or A / D to aim, Space to drop and P to pause.
+- **Merge:** two stars of the same class merge into the next class:
+  **M → K → G → F → A → B → O9V → O6V → O3V**. O3V is the largest and can't merge.
+- **Stars age:** massive stars (B and O) explode as supernovae and leave a neutron star or a black hole. Smaller stars eventually become white dwarfs.
+- **Compact objects:**
+  - Black holes, neutron stars and white dwarfs feed on a star they touch.
+  - When two of them meet, they spiral together for 5 seconds and merge. This works for two black holes, two neutron stars, or a black hole with a neutron star or a white dwarf.
+- **Win:** grow a black hole to **500 M☉**.
+- **Lose:** stars stay above the danger line for 3 seconds.
+- **Inspect:** this mode shows any body's mass and its element layers, which change as a star ages.
 
-# 合成大恒星 3.1
+## Run locally
 
-移动端优先的单屏恒星合成游戏。直接托管 dist/，无需构建或依赖。`npm run dev` 启动本地服务器；`npm test` 检查模拟、交互及光学数值。
+No build step and no dependencies; you only need [Node.js](https://nodejs.org/) 20.11 or newer.
 
-## 交互与碰撞
+```bash
+npm run dev    # serves dist/ at http://127.0.0.1:4173
+npm test       # simulation, interaction and optics tests
+```
 
-点击/拖动松手投放；长按 0.45 秒后每约 0.36 秒连续投放，可拖动改变落点。暂停、查看、选项、指针取消和切到后台都会取消连续投放。
+The `dist/` folder is the whole game and can be hosted as static files.
 
-恒星是带颗粒纹理的二维圆面。初始角速度为零，纹理只跟随模拟的 rotation。圆盘惯量 I=mr²/2；碰撞使用接触点相对速度、法向冲量和库仑摩擦冲量（μ=0.24）求角速度；地面摩擦使滑动转为滚动。正面无切向速度的碰撞不会凭空自转。质量与惯性、阻尼及速度上限为游戏性作过调整。
+## Project layout
 
-## 游戏数值
+| Path | Contents |
+| --- | --- |
+| `dist/simulation.js` | Game rules and physics, deterministic and independent of the renderer |
+| `dist/renderer.js` | Canvas rendering, particles and effects |
+| `dist/optics.js` | WebGL gravitational-lensing and accretion-disk pass |
+| `dist/app.js`, `dist/index.html`, `dist/style.css` | Interface |
+| `dist/i18n.js` | English and Chinese text |
+| `tools/` | Scripts that regenerate the textures and the lensing lookup table |
+| `tests/` | Node test suite |
 
-- M → K → G → F → A → B → O9V → O6V → O3V；只合并同类，质量从 0.25 M☉ 倍增。O 型按次型合成：O9V（16 M☉）+ O9V → O6V（32 M☉），O6V + O6V → O3V（64 M☉）；不同次型不能合成，O3V 是上限。O9V 坍缩为中子星，O6V / O3V 越过 25 M☉，坍缩为黑洞。
-- 界面默认英文，可在“游戏选项 → 语言”切换中文（dist/i18n.js）。
-- 尺寸与投放参照 [合成大西瓜示例](https://tinoe.bytedance.com/docs/tutorial-demo/watermelon)：示例水果直径依次为 52、78、108、119、153、183、186、258、308、404（720 宽画面）。九级恒星按顺序取用，跳过与西红柿几乎同大的桃子（186），因此可投放的 M–B 六级正对应示例的六种可投放水果，O3V 对应大西瓜；按 660 像素宽的星场等比缩放（半径 23.8 → 185.2）。下一颗与示例相同，从最小的六级中等概率抽取（各 1/6）；投放高度保证 B 型也不碰到顶部。
-- 吸积时可见从供体内拉格朗日点螺旋落入吸积盘的明亮物质流、撞击热斑与双极喷流。
-- 被吸积的恒星始终贴附在致密天体（黑洞、中子星、白矮星）上：两者以质量加权的距离约束保持接触、一起运动，不再因碰撞或冲击而脱离，直到供体被吸干或吸积者参与并合。
-- 天体之间没有额外引力：恒星与黑洞、中子星、白矮星之间互不吸引，只受统一重力、碰撞、冲击与 X 射线暴影响。黑洞仅吸积接触范围内（两半径和 + 3 像素）的一颗恒星，分离后解除锁定。
-- 黑洞吸积率=(0.72+0.075M)/200 M☉/秒，是上一版的 1/10、最初版本的 1/200。
-- 致密天体并合：黑洞+黑洞、中子星+中子星、黑洞+中子星、黑洞+白矮星一旦接触就进入 5 秒旋近。黑洞+中子星时，若黑洞轻于 10 M☉，中子星在视界外被潮汐撕碎并产生千新星；更重的黑洞将其整体吞没。两者绕质心公转，间距按引力波规律 a∝(t_c−t)^¼ 缩小、角速度按开普勒 ω∝a^−3/2 加快（chirp）。轨迹是固定脚本：开始时质心在 0.25 秒内滑到能容纳最大轨道的位置，此后不受周围天体、冲击波、X 射线暴或边界影响，周围恒星被推开；旋近期间停止吸积。结束时并合并发出引力波；白矮星被潮汐拉长、撕碎后吞噬，双中子星并合伴随千新星余辉。
-- 中子星保留吸积与规律 X 射线暴（每 1.25 秒一次，190 像素内推力 640，为原 64 的 10 倍，不推动正在被吸积的恒星）；超过 2.3 M☉ 的吸积物被排出，不会因吸积坍缩。两颗中子星并合仍可形成黑洞。
-- 8 M☉ 为核心坍缩下限，25 M☉ 为本游戏采用的简化黑洞前身分界。真实结局还依赖金属丰度、失质量、双星演化等，不能只由一个质量阈值预测。
-- 恒星内部剖面随年龄连续演化并标注元素：全对流 M 矮星保持均匀混合、氦逐渐增多；0.35–1.5 M☉ 的 pp 链核心留下增长的氦灰烬核，末期转为氢燃烧壳并点燃氦形成 C/O 核；1.5–8 M☉ 的 CNO 对流核逐渐收缩、留下 μ 梯度区；≥8 M☉ 恒星前 35% 寿命燃烧核心氢，之后由外向内依次形成 He → C/O → O/Ne → Si → Fe 洋葱壳层。各阶段时长刻意不按真实比例（真实的氢燃烧约占 90% 寿命，硅燃烧只有约一天），而是从诞生起就持续变化，剖面本身就是剩余寿命的指示器：出现铁核即临近坍缩。所有边界都是年龄的连续函数，剖面以渐变过渡，正在燃烧的壳层发光；剖面打开时类型标签移到未切开的一侧，铁核等小核心也能标注。
-- 核心坍缩等待时间 135 / 90 / 35 秒；低质量恒星 300 秒变白矮星；1.4 M☉ 白矮星触发 Ia 型超新星。
-- 核心坍缩超新星的动画：最后 4 秒恒星颤动，最后 1.1 秒包层向内塌缩（体积收缩、核心白热、物质向内流），随后核心反弹：中微子前锋最先掠过，反弹激波抵达表面时出现激波暴（短暂紫外闪光），抛射物再按坍缩瞬间的洋葱分层逐层膨胀（外层最快）。各层壳被瑞利–泰勒不稳定撕成团块与断续纤维，硅、氧氖物质以羽流穿出外层；火花从各自的壳层射出，先白热、再显出元素颜色（爆炸后不再标注元素名称）。数秒后抛射物冷却，各层转为发射线颜色（H→Hα 红、O/Ne→[O III] 青、Si→[S II] 橙、Fe 紫），形成年轻遗迹；前向激波始终领先于最外层抛射物，反向激波在内部回落。铁核留作致密残骸：新生黑洞的吸积盘由暗转亮并吞下回落物质，新生中子星吹出脉冲星风云。Ia 型抛射物同样分层：内 Ni/Fe、中 Si/S、外未燃烧的 C/O。
-- 白矮星（或遇到 <10 M☉ 黑洞的中子星）被黑洞潮汐撕裂：被拉长成面条状的物质带，约一半碎屑落向黑洞形成高温环，另一半沿轨道抛出成为潮汐尾，并伴随逐渐增强的耀发；并合时出现潮汐瓦解耀发与短暂喷流。
-- 超新星不再摧毁任何天体，只把它们推开。推力在爆发瞬间一次性作用于半径内所有天体，与画面上扩张的激波环无关；推力为 6100（原 610 的 10 倍，仍受 1150 像素/秒速度上限约束）。粒子与余辉持续 14 秒。
-- 星场是封闭的盒子：左右墙、地面与顶部（y=12）都约束天体。高速撞击（>300 像素/秒）以 0.45 的恢复系数弹回，低速接触仍保持原来的阻尼，便于堆叠稳定。
-- 黑洞达到 500 M☉ 获胜，时间加分并进入星系结尾。
+## Credits
 
-## 美术、粒子与光线偏折
+All textures are generated procedurally by `tools/generate-assets.mjs`. The black-hole lensing adapts equations from Eric Bruneton's [black_hole_shader](https://github.com/ebruneton/black_hole_shader) (BSD-3-Clause). The gravitational-wave ripple adapts code from [algometrix/blackhole-sim](https://github.com/algometrix/blackhole-sim) (MIT). See [`dist/THIRD_PARTY.md`](dist/THIRD_PARTY.md) for the details.
 
-统一的视觉语言：天体与粒子的热辐射都沿同一条黑体色带变化，星云气体只用 Hα（玫红）与 [O III]（青绿）两色，致密天体的光为金色（吸积盘）与青色（脉冲星）；界面采用同一套玻璃面板、色彩变量与 SVG 图标。
-
-全部纹理是本项目原创的程序生成 PNG。`node tools/generate-assets.mjs` 重建可平铺的 1024×1200 深空背景（星云、尘埃带、带衍射芒的亮星、远方星系）与 11 种光球纹理（含 O6V / O3V；三维米粒组织、黑子、二次临边昏暗）。辉光、衍射芒与粒子光点在运行时绘制并缓存；所有发光层使用加色混合。粒子按色带分桶批量描线，超新星抛射物先沿黑体冷却，再转为 Hα / [O III] 星云遗迹。
-
-光学模块实际重采样 `assets/deep-field.png` 整张背景图像。GPU 使用单次 WebGL 全屏 pass，分辨率随画布匹配（高画质约 1:1，低画质约 0.6 倍）；最多 8 个致密天体、3 个波包。无 WebGL 时使用同一映射的 10 Hz CPU 降级路径，吸积盘改为示意绘制。
-
-黑洞吸积盘在同一 pass 中光线追踪：用 Beloborodov (2002) 光线弯曲近似 1−cosα=(1−cosψ)(1−rs/r) 求每个像素的主像落在盘上的半径（二分法），因此盘的远侧会被透镜抬到阴影上方；温度按 Shakura–Sunyaev 分布，多普勒与引力红移因子 g 决定黑体颜色与增亮（趋近一侧更亮更蓝），开普勒差速旋转使用双相流动避免无限剪切。临界曲线 b=√27/2 外加一圈光子环。关闭"光线偏折"时背景不再弯曲，吸积盘按平面投影绘制。吸积时盘逐渐增亮。
-
-黑洞使用 Schwarzschild 无自旋时空的光子轨道方程 u''=1.5u²−u（rs=1），用 RK4 离线积分并生成 2048 项对数采样偏折表。临界冲量 b=√27/2；临界内为黑洞阴影。运行时查表，把出射渐近线投影到距离 12rs 的背景平面，可产生图像位移、反像和强场多圈像。`node tools/generate-optics.mjs` 可重建查表。
-
-中子星外部采用同一 Schwarzschild 真空解，有限表面半径 R=2.9rs，表观半径 R/√(1−rs/R)，没有黑洞事件视界。引力波将延迟传播的四极 plus/cross 应变变换成背景采样坐标位移；中子星并合振幅较小。
-
-这是有物理依据且为性能简化的游戏渲染：多个镜头逐像素选主导局部透镜，背景为有限平面，吸积盘为几何薄盘并只计算主像（高阶像以光子环近似）；波纹是放大的线性 TT 应变可视化。没有求解多黑洞动态度规、Kerr 自旋时空、完整数值相对论或辐射输运，不应当称作天文观测级模拟。
-
-开源来源、固定版本及授权见 dist/THIRD_PARTY.md。
+The physics is inspired by real astrophysics but simplified and exaggerated for gameplay. It is not a scientific simulation.
