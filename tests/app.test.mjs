@@ -166,7 +166,7 @@ test('minimal game starts, responds to mobile input, pauses, and reaches its end
       assert.equal(get('ready-overlay').hidden,false);
       assert.equal(get('score').textContent,'0');
       assert.equal(get('bh-mass').textContent,'0.00','attract-screen scenery is not actual game progress');
-      assert.equal(sim.winningMass,500);
+      assert.equal(sim.winningMass,200);
       assert.ok(renderer.optics,'background optics initialized');
     });
     await t.test('English is the default and the language can be switched to Chinese', () => {
@@ -212,12 +212,12 @@ test('minimal game starts, responds to mobile input, pauses, and reaches its end
       get('pause').click();get('settings-open').click();get('settings-close').click();assert.equal(sim.state,'paused');
       get('pause').click();
     });
-    await t.test('the 500-mass ending keeps advancing the physical and visual clocks', () => {
-      sim.bodies=[];sim.addBody('bh',6,350,600,500);sim.addBody('star',3,490,600);env.tick(.2);
+    await t.test('the 200-mass ending keeps advancing the physical and visual clocks', () => {
+      sim.bodies=[];sim.addBody('bh',6,350,600,200);sim.addBody('star',3,490,600);env.tick(.2);
       assert.equal(sim.state,'won');assert.equal(get('cinema-caption').hidden,false);
       const elapsed=sim.time;env.tick(13);assert.equal(sim.time,elapsed);
       assert.ok(sim.finaleTime>12&&renderer.isCinematicDone);
-      assert.equal(get('state-overlay').hidden,false);
+      assert.equal(get('state-overlay').hidden,false);assert.equal(get('won-actions').hidden,false,'endless and sandbox are offered after winning');
       get('state-action').click();assert.equal(sim.state,'playing');assert.equal(sim.score,0);
     });
     await t.test('ejecta stay visible longer, feel gravity, cool and remain budgeted', () => {
@@ -235,6 +235,16 @@ test('minimal game starts, responds to mobile input, pauses, and reaches its end
       assert.deepEqual(renderer.effects.map(e=>e.kind).sort(),['bounce','shells','shock'],'collapse shows bounce, element shells and the blast wave');
       assert.ok(renderer.particles.length>0&&renderer.particles.every(p=>p.layered),'ejecta sparks come from the element shells');
       env.tick(2);assert.ok(renderer.effects.some(e=>e.kind==='shells'));
+    });
+    await t.test('after a win the sandbox opens with every body to place',()=>{
+      sim.bodies=[];sim.addBody('bh',6,350,600,200);env.tick(.2);assert.equal(sim.state,'won');env.tick(13);
+      get('win-sandbox').click();assert.equal(sim.mode,'sandbox');assert.equal(sim.state,'playing');env.tick(.3);
+      assert.equal(get('sandbox-bar').hidden,false);assert.equal(get('sandbox-bar').children.length,14);
+      get('sandbox-bar').children.at(-1).onclick();env.tick(.3);const before=sim.bodies.length;
+      get('universe').dispatch('pointerdown',{pointerId:21,button:0,clientX:300,clientY:300});get('universe').dispatch('pointerup',{pointerId:21,clientX:300,clientY:300});
+      assert.equal(sim.bodies.length,before+1);assert.equal(sim.bodies.at(-1).kind,'bh');assert.equal(sim.bodies.at(-1).mass,200);
+      get('restart').click();assert.equal(sim.mode,'sandbox');assert.equal(sim.bodies.length,0,'restart keeps the mode with a fresh field');
+      sim.restart();sim.start();
     });
     await t.test('long press continuously drops and pause cancels the held pointer',()=>{
       sim.restart();sim.start();sim.bodies=[];env.tick(.5);let drops=0;const original=sim.drop.bind(sim);sim.drop=x=>{drops++;return original(x);};

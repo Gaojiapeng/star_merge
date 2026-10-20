@@ -529,13 +529,20 @@ export class Renderer{
   }
 
   _dropGuide(){
-    const c=this.ctx,type=STAR_TYPES[this.sim.nextType]||STAR_TYPES[0],r=type.radius,x=clamp(this.pointerX,this.sim.wallLeft+2+r,this.sim.wallRight-2-r),y0=this.sim.dropHeight?.(this.sim.nextType)??62,ready=this.sim.state!=='playing'||this.sim.canDrop;
+    // Sandbox previews whatever body is selected; otherwise the next star in line.
+    const sb=this.sandboxSpec&&this.sim.specFor?this.sim.specFor(this.sandboxSpec):null,next=STAR_TYPES[this.sim.nextType]||STAR_TYPES[0];
+    const probe=sb?{kind:sb.kind,type:sb.type,mass:sb.mass}:{kind:'star',type:this.sim.nextType,mass:next.mass};
+    const type=sb?{radius:sb.radius,color:sb.kind==='star'?spectralOf(probe).color:sb.kind==='bh'?BH_LIGHT:sb.kind==='ns'?NS_COLOR:WD_COLOR,type:sb.kind==='star'?spectralOf(probe).type:sb.kind.toUpperCase()}:next;
+    const c=this.ctx,r=type.radius,x=clamp(this.pointerX,this.sim.wallLeft+2+r,this.sim.wallRight-2-r),y0=sb?Math.max(62,this.sim.ceiling+r+2):this.sim.dropHeight?.(this.sim.nextType)??62,ready=this.sim.state!=='playing'||(sb?this.sim.time-this.sim._lastDrop>=.22:this.sim.canDrop);
     let land=this.sim.floor-r;for(const b of this.sim.bodies){const dx=Math.abs(b.x-x),R=b.radius+r;if(dx<R&&b.y>y0){const hit=b.y-Math.sqrt(R*R-dx*dx);if(hit>y0+r&&hit<land)land=hit;}}
     const beam=c.createLinearGradient(0,y0+r,0,land);beam.addColorStop(0,rgba(type.color,.38));beam.addColorStop(1,rgba(type.color,.04));c.fillStyle=beam;c.fillRect(x-.75,y0+r+4,1.5,Math.max(0,land-y0-r-4));
     c.save();c.setLineDash([3,5]);c.strokeStyle=rgba(type.color,.42);c.lineWidth=1.2;c.beginPath();c.arc(x,land,r,0,TAU);c.stroke();c.restore();
     c.globalAlpha=ready?1:.45;c.globalCompositeOperation='lighter';this._glow(x,y0,r*2.6,type.color,.4+.08*Math.sin(this.time*3));c.globalCompositeOperation='source-over';
-    c.globalAlpha=ready?1:.45;if(!this._tex(this.sim.nextType,x,y0,r,this.time*.15)){c.fillStyle=type.color;c.beginPath();c.arc(x,y0,r,0,TAU);c.fill();}
-    c.globalAlpha=1;c.textAlign='center';c.textBaseline='middle';c.font=`700 ${clamp(r*.62,13,34)}px ${FONT}`;c.fillStyle=this.sim.nextType>=2?'rgba(40,36,70,.75)':'rgba(255,250,240,.95)';c.fillText(type.type,x,y0+1);c.textBaseline='alphabetic';
+    c.globalAlpha=ready?1:.45;
+    if(probe.kind==='bh'){c.fillStyle='#000';c.beginPath();c.arc(x,y0,r,0,TAU);c.fill();c.strokeStyle=rgba(BH_LIGHT,.85);c.lineWidth=1.6;c.beginPath();c.arc(x,y0,r*1.04,0,TAU);c.stroke();}
+    else if(!this._tex(probe.kind==='star'?texIndex(probe):probe.kind==='wd'?7:8,x,y0,r,this.time*.15)){c.fillStyle=type.color;c.beginPath();c.arc(x,y0,r,0,TAU);c.fill();}
+    const dark=probe.kind==='star'?probe.type>=2:probe.kind!=='bh',label=type.type;
+    c.globalAlpha=1;c.textAlign='center';c.textBaseline='middle';c.font=`700 ${clamp(r*.62,11,34)*(label.length>1?.78:1)}px ${FONT}`;c.fillStyle=probe.kind==='bh'?'rgba(255,236,214,.92)':dark?'rgba(40,36,70,.75)':'rgba(255,250,240,.95)';c.fillText(label,x,y0+1);c.textBaseline='alphabetic';
   }
   _danger(){const d=this.sim.state==='playing'?this.sim.danger||0:0;if(d<.05)return;const c=this.ctx,a=d*(.55+.45*Math.sin(this.time*(5+d*10))),g=c.createLinearGradient(0,0,0,240);g.addColorStop(0,rgba('#ff3a58',.3*a));g.addColorStop(1,'rgba(255,58,88,0)');c.fillStyle=g;c.fillRect(0,0,W,240);}
 

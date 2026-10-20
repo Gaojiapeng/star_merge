@@ -15,24 +15,25 @@
     <symbol id="i-restart" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M18.5 3.5v4h-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   </defs>
 </svg>
-<main class="game">
+<main class="game" id="game">
   <header class="topbar"><div class="brand"><svg class="mark" aria-hidden="true"><use href="#i-mark"/></svg><div><h1 data-i18n="brand">Stellar Forge</h1><span class="tagline" data-i18n="tagline">MERGE THE STARS</span></div></div><button id="settings-open" class="icon-button" title="Options" aria-label="Game options" data-i18n-title="options" data-i18n-aria="optionsAria"><svg aria-hidden="true"><use href="#i-gear"/></svg></button></header>
   <section class="hud">
     <div class="stat score"><span class="label" data-i18n="score">Score</span><strong id="score">0</strong></div>
     <div class="stat record"><span class="label"><span data-i18n="best">Best</span> <b id="best">0</b></span><time id="timer">00:00</time></div>
     <div class="stat next"><span class="label" data-i18n="next">Next</span><div class="next-row"><span id="next-type" class="type-chip">M</span><span id="next-mass">0.25 M☉</span></div></div>
   </section>
-  <div class="goal"><span class="goal-label"><i class="bh-dot" aria-hidden="true"></i><span data-i18n="blackHole">Black hole</span> <b id="bh-mass">0</b><span class="of"> / 500 M☉</span></span><div class="track"><div id="mass-progress"></div></div></div>
+  <div class="goal"><span class="goal-label"><i class="bh-dot" aria-hidden="true"></i><span data-i18n="blackHole">Black hole</span> <b id="bh-mass">0</b><span class="of" id="goal-of"> / 200 M☉</span></span><div class="track" id="mass-track"><div id="mass-progress"></div></div></div>
   <section id="canvas-wrap" class="stage">
     <canvas id="universe" width="700" height="820" tabindex="0" aria-label="Drag to aim, tap or hold to drop." data-i18n-aria="canvasAria"></canvas>
     <div id="danger" class="danger" hidden><i aria-hidden="true"></i><span data-i18n="danger">Past the danger line · merge fast</span></div>
     <div class="board-status"><span id="field-status">Waiting to drop</span><span id="body-count"></span></div>
-    <div id="ready-overlay" class="overlay ready"><svg class="hero-mark" aria-hidden="true"><use href="#i-mark"/></svg><h2 data-i18n="readyTitle">Start with a single star.</h2><p data-i18n-html="readyText">Match stars to forge bigger ones;<br>let massive stars collapse and feed a black hole to 500 M☉.</p><button id="start" class="primary" data-i18n="start">Start</button><span class="hint" data-i18n="hint">Tap to drop · hold to keep dropping · Space / arrow keys</span></div>
-    <div id="state-overlay" class="overlay" hidden><h2 id="state-title">Paused</h2><p id="state-detail"></p><div id="end-stats"></div><button id="state-action" class="primary">Resume</button></div>
+    <div id="ready-overlay" class="overlay ready"><svg class="hero-mark" aria-hidden="true"><use href="#i-mark"/></svg><h2 data-i18n="readyTitle">Start with a single star.</h2><p data-i18n-html="readyText">Match stars to forge bigger ones;<br>let massive stars collapse and feed a black hole to 200 M☉.</p><button id="start" class="primary" data-i18n="start">Start</button><div class="overlay-alt"><button id="start-endless" class="ghost" data-i18n="endless">Endless</button><button id="start-sandbox" class="ghost" data-i18n="sandbox" hidden>Sandbox</button></div><span class="hint" data-i18n="hint">Tap to drop · hold to keep dropping · Space / arrow keys</span></div>
+    <div id="state-overlay" class="overlay" hidden><h2 id="state-title">Paused</h2><p id="state-detail"></p><div id="end-stats"></div><button id="state-action" class="primary">Resume</button><div id="won-actions" class="overlay-alt" hidden><button id="win-endless" class="ghost" data-i18n="keepPlaying">Keep playing · endless</button><button id="win-sandbox" class="ghost" data-i18n="sandbox">Sandbox</button></div></div>
     <div id="cinema-caption" class="cinema" hidden><span data-i18n="cinemaKicker">Hundreds of millions of years later</span><h2 data-i18n="cinemaTitle">The galaxy has a heart.</h2></div>
     <div id="body-info" class="body-info" hidden><button id="info-close" class="icon-button" aria-label="Close body info" data-i18n-aria="closeInfo"><svg aria-hidden="true"><use href="#i-close"/></svg></button><div class="info-head"><i id="info-swatch" class="swatch" aria-hidden="true"></i><strong id="info-name"></strong><span id="info-mass"></span></div><div id="info-layers"></div><p id="info-evolution"></p></div>
   </section>
   <div class="toolbar"><button id="pause" disabled aria-label="Pause game"><svg aria-hidden="true"><use href="#i-pause"/></svg><span>Pause</span></button><button id="mode" aria-pressed="false"><svg aria-hidden="true"><use href="#i-scope"/></svg><span>Inspect</span></button><button id="restart"><svg aria-hidden="true"><use href="#i-restart"/></svg><span data-i18n="restart">Restart</span></button></div>
+  <div id="sandbox-bar" class="sandbox-bar" hidden aria-label="Sandbox bodies" data-i18n-aria="sandboxAria"></div>
   <div class="sequence"><span style="--c:#ff7a4c">M</span><span style="--c:#ffa84e">K</span><span style="--c:#ffd46a">G</span><span style="--c:#fbecc4">F</span><span style="--c:#d6e6ff">A</span><span style="--c:#8db8ff">B</span><span class="o" style="--c:#a49cff">O9V</span><span class="o" style="--c:#8a78ff">O6V</span><span class="o" style="--c:#e0d6ff">O3V</span><em data-i18n="collapse">collapse</em><span class="bh" style="--c:#ffcf8a">BH</span></div>
 </main>
 <dialog id="settings-dialog"><div class="dialog-title"><h2 data-i18n="options">Options</h2><button id="settings-close" class="icon-button" aria-label="Close options" data-i18n-aria="closeOptions"><svg aria-hidden="true"><use href="#i-close"/></svg></button></div>

@@ -171,7 +171,7 @@ export const PHYSICS = Object.freeze({
   neutronStarLimit: 2.3,
   chandrasekharMass: 1.4,
   whiteDwarfAge: 300,
-  winningMass: 500,
+  winningMass: 200,
   supernovaTimeScale: 5,
   blackHoleAccretionScale: 1 / 200,
   compactMergerDuration: 5,
@@ -201,6 +201,9 @@ function canInspiral(a, b) {
   const pair = [a.kind, b.kind].sort().join('+');
   return pair === 'bh+bh' || pair === 'ns+ns' || pair === 'bh+wd' || pair === 'bh+ns';
 }
+
+const SIM_MODES = ['classic', 'endless', 'sandbox'];
+const WIN_SNAPSHOT_KEYS = ['bodies', 'mergers', 'time', 'score', 'nextType', 'stats', 'combo', 'danger', 'dangerTime', '_rng', '_id', '_lastDrop', '_lastMerge', '_dropCount', 'wallLeft', 'wallRight', 'floor'];
 
 function typeForMass(mass) {
   for (let i = STAR_TYPES.length - 1; i >= 0; i--) {
@@ -284,6 +287,7 @@ export class Simulation {
 
   restart() {
     this._reset();
+    this.mode = 'classic';
     this.state = 'ready';
     // A static, deterministic attract screen. start() resets this preview.
     let x = this.wallLeft + 4;
@@ -306,13 +310,47 @@ export class Simulation {
     return this;
   }
 
-  start() {
+  /** classic: win at the goal mass. endless: no win, black holes grow without
+   * limit. sandbox: place any body, no win and no loss. */
+  start(mode = 'classic') {
     if (this.state === 'playing' || this.state === 'paused') return this;
     this._reset();
+    this.mode = SIM_MODES.includes(mode) ? mode : 'classic';
     this.state = 'playing';
-    for (const [type, x] of [[0, 178], [1, 296], [0, 420], [1, 538]]) this.addBody('star', type, x, this.floor - STAR_TYPES[type].radius);
+    if (this.mode !== 'sandbox') for (const [type, x] of [[0, 178], [1, 296], [0, 420], [1, 538]]) this.addBody('star', type, x, this.floor - STAR_TYPES[type].radius);
     this.nextType = this._rollNext();
     return this;
+  }
+
+  /** After the victory ending, resume the exact board as it was when the goal
+   * was reached, in endless or sandbox mode. */
+  continueAfterWin(mode = 'endless') {
+    if (this.state !== 'won' || !this._winSnapshot) return false;
+    Object.assign(this, structuredClone(this._winSnapshot));
+    this.mode = mode === 'sandbox' ? 'sandbox' : 'endless';
+    this.state = 'playing';
+    this.winnerId = null;
+    this.finaleTime = 0;
+    for (const body of this.bodies) body.isGalaxySeed = false;
+    return true;
+  }
+
+  /** Sandbox: describe and place any body. spec = { kind, type?, mass? }. */
+  specFor(spec) {
+    const kind = spec.kind ?? 'star';
+    const mass = spec.mass ?? (kind === 'star' ? (spec.type === O_TYPE ? O_SUBCLASSES[spec.sub ?? 0].mass : STAR_TYPES[spec.type ?? 0].mass) : kind === 'bh' ? 30 : kind === 'ns' ? 1.4 : 0.8);
+    const type = kind === 'star' ? typeForMass(mass) : O_TYPE;
+    return { kind, type, mass, radius: kind === 'star' ? starRadius(mass) : remnantRadius(kind, mass) };
+  }
+
+  place(spec, x) {
+    if (this.state !== 'playing' || this.mode !== 'sandbox' || this.time - this._lastDrop < 0.22 || !Number.isFinite(x)) return null;
+    const { kind, type, mass, radius } = this.specFor(spec);
+    const body = this.addBody(kind, type, clamp(x, this.wallLeft + radius + 1, this.wallRight - radius - 1), Math.max(62, this.ceiling + radius + 2), mass);
+    body.vy = 42;
+    body.dropGrace = 2;
+    this._lastDrop = this.time;
+    return body;
   }
 
   togglePause() {
@@ -420,7 +458,7 @@ export class Simulation {
     this._updateEvolution();
     this._updateAccretion(dt);
     this._checkVictory();
-    if (this.state === 'playing') this._checkDanger(dt);
+    if (this.state === 'playing' && this.mode !== 'sandbox') this._checkDanger(dt);
   }
 
   _applyGravity() {
@@ -870,9 +908,11 @@ export class Simulation {
   }
 
   _checkVictory() {
-    if (this.state !== 'playing') return;
+    if (this.state !== 'playing' || this.mode !== 'classic') return;
     const winner = this.bodies.find(body => body.kind === 'bh' && body.mass >= this.winningMass);
     if (!winner) return;
+    // Keep the board as it stands so endless or sandbox play can resume from it.
+    this._winSnapshot = structuredClone(Object.fromEntries(WIN_SNAPSHOT_KEYS.map(key => [key, this[key]])));
     this.state = 'won';
     this.winnerId = winner.id;
     this.winTime = this.time;
@@ -951,7 +991,7 @@ export class Simulation {
 
   getSnapshot() {
     return {
-      state: this.state, width: this.width, height: this.height,
+      state: this.state, mode: this.mode, width: this.width, height: this.height,
       time: this.time, score: this.score, nextType: this.nextType,
       stats: { ...this.stats },
       danger: this.danger, dangerTime: this.dangerTime,

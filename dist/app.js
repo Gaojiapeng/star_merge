@@ -1,4 +1,4 @@
-import { Simulation, STAR_TYPES, PHYSICS, spectralOf, oSubclass, O_TYPE, stellarLayers, stellarPhase } from './simulation.js?v=3.1.0';
+import { Simulation, STAR_TYPES, O_SUBCLASSES, PHYSICS, spectralOf, oSubclass, O_TYPE, stellarLayers, stellarPhase } from './simulation.js?v=3.1.0';
 import { Renderer } from './renderer.js?v=3.1.0';
 import { HoldDrop } from './hold-drop.js?v=3.1.0';
 import { t, setLang, name } from './i18n.js?v=3.1.0';
@@ -9,10 +9,16 @@ const storageKey='stellar-forge-v2';
 const icon=(name,label)=>`<svg aria-hidden="true"><use href="#i-${name}"/></svg><span>${label}</span>`;
 let best=0,settings={lang:'en',sound:false,layers:true,lensing:true,quality:!matchMedia('(max-width: 640px)').matches,motion:matchMedia('(prefers-reduced-motion: reduce)').matches};
 try{best=Number(localStorage.getItem(storageKey+'-best'))||0;settings={...settings,...JSON.parse(localStorage.getItem(storageKey+'-settings')||'{}')};}catch{}
+// Sandbox palette: every star class and compact object, black holes in three sizes.
+const SANDBOX=[...STAR_TYPES.slice(0,O_TYPE).map((s,i)=>({label:s.type,color:s.color,spec:{kind:'star',type:i}})),...O_SUBCLASSES.map((s,i)=>({label:s.type,color:s.color,spec:{kind:'star',type:O_TYPE,sub:i}})),
+  {label:'WD',color:'#e6eeff',spec:{kind:'wd'}},{label:'NS',color:'#8fe0ff',spec:{kind:'ns'}},...[10,50,200].map(m=>({label:`BH ${m}`,color:'#ffcf8a',spec:{kind:'bh',mass:m},bh:true}))];
+let sandboxChoice=0,sandboxUnlocked=false;
+try{sandboxUnlocked=localStorage.getItem(storageKey+'-sandbox')==='1';}catch{}
 let renderer,mode='drop',selectedId=null,activePointer=null,restoreAfterOptions=false,toastTimer,audioContext,wonBefore=false;
 const sim=new Simulation({onEvent:event=>{renderer?.event(event);playSound(event.kind);if(event.kind==='supernova')toast(t(event.variant==='Ia'?'supernovaIa':'supernova'));if(event.kind==='inspiral')toast(t('inspiral.'+event.variant));}});
 renderer=new Renderer($('universe'),sim);
-const hold=new HoldDrop(x=>{if(sim.state==='playing'&&mode==='drop')sim.drop(x);});
+const hold=new HoldDrop(x=>{if(sim.state==='playing'&&mode==='drop')dropAt(x);});
+function dropAt(x){return sim.mode==='sandbox'?sim.place(SANDBOX[sandboxChoice].spec,x):sim.drop(x);}
 function cancelHold(){activePointer=null;hold.cancel();}
 export { sim, renderer };
 function playSound(kind){
@@ -25,11 +31,13 @@ function playSound(kind){
 }
 function toast(text){clearTimeout(toastTimer);$('toast').textContent=text;$('toast').hidden=false;toastTimer=setTimeout(()=>$('toast').hidden=true,2400);}
 function reset(){cancelHold();selectedId=null;renderer.selectedId=null;renderer.reset();sim.restart();wonBefore=false;setMode('drop');updateUi();}
-function start(){renderer.reset();sim.start();updateUi();$('universe').focus({preventScroll:true});}
+function start(kind='classic'){renderer.reset();sim.start(kind);updateUi();if(kind!=='classic')toast(t(kind==='sandbox'?'sandboxHint':'endlessHint'));$('universe').focus({preventScroll:true});}
+function continueAfterWin(kind){cancelHold();if(sim.continueAfterWin(kind)){renderer.reset();updateUi();toast(t(kind==='sandbox'?'sandboxHint':'endlessHint'));}}
 function togglePause(){cancelHold();if(['playing','paused'].includes(sim.state)){sim.togglePause();updateUi();}}
 function setMode(next){cancelHold();mode=next;renderer.inspectMode=next==='inspect';$('mode').setAttribute('aria-pressed',next==='inspect');$('mode').innerHTML=next==='inspect'?icon('drop',t('drop')):icon('scope',t('inspect'));$('universe').style.cursor=next==='inspect'?'help':'crosshair';if(next==='drop'){selectedId=null;renderer.selectedId=null;$('body-info').hidden=true;}}
-$('start').onclick=start;$('pause').onclick=togglePause;$('mode').onclick=()=>{setMode(mode==='drop'?'inspect':'drop');if(mode==='inspect')toast(t('inspectHint'));};
-$('restart').onclick=()=>{reset();start();};
+$('start').onclick=()=>start();$('start-endless').onclick=()=>start('endless');$('start-sandbox').onclick=()=>start('sandbox');$('win-endless').onclick=()=>continueAfterWin('endless');$('win-sandbox').onclick=()=>continueAfterWin('sandbox');$('pause').onclick=togglePause;$('mode').onclick=()=>{setMode(mode==='drop'?'inspect':'drop');if(mode==='inspect')toast(t('inspectHint'));};
+$('restart').onclick=()=>{const kind=sim.mode;reset();start(kind);};
+function buildSandbox(){$('sandbox-bar').replaceChildren(...SANDBOX.map((item,i)=>{const b=document.createElement('button');b.textContent=item.label;b.style.setProperty('--c',item.color);if(item.bh)b.className='bh';b.setAttribute('aria-pressed',String(i===sandboxChoice));b.onclick=()=>{sandboxChoice=i;buildSandbox();updateUi();};return b;}));}
 $('state-action').onclick=()=>{if(sim.state==='paused')togglePause();else{reset();start();}};
 $('info-close').onclick=()=>{selectedId=null;renderer.selectedId=null;$('body-info').hidden=true;};
 $('settings-open').onclick=()=>{cancelHold();restoreAfterOptions=sim.state==='playing';if(restoreAfterOptions)sim.togglePause();$('settings-dialog').showModal();updateUi();};
@@ -64,7 +72,7 @@ document.addEventListener('keydown',e=>{
   if(['ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();
   if(e.key==='ArrowLeft'||e.key.toLowerCase()==='a')renderer.pointerX=clamp(renderer.pointerX-25,42,658);
   if(e.key==='ArrowRight'||e.key.toLowerCase()==='d')renderer.pointerX=clamp(renderer.pointerX+25,42,658);
-  if(e.code==='Space'&&!e.repeat){if(sim.state==='ready')start();else if(sim.state==='playing'&&mode==='drop')sim.drop(renderer.pointerX);}
+  if(e.code==='Space'&&!e.repeat){if(sim.state==='ready')start();else if(sim.state==='playing'&&mode==='drop')dropAt(renderer.pointerX);}
   if(e.key.toLowerCase()==='p'&&!e.repeat)togglePause();
 });
 document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelHold();restoreAfterOptions=false;if(sim.state==='playing')sim.togglePause();updateUi();}});
@@ -80,14 +88,18 @@ function updateInfo(){
 }
 function updateUi(){
   $('score').textContent=Math.floor(sim.score).toLocaleString('en-US');if(sim.score>best){best=Math.floor(sim.score);try{localStorage.setItem(storageKey+'-best',String(best));}catch{}}$('best').textContent=best.toLocaleString('en-US');$('timer').textContent=timeText(sim.time);
-  const next=STAR_TYPES[sim.nextType];$('next-type').textContent=next.type;$('next-type').style.setProperty('--c',next.color);$('next-mass').textContent=`${massText(next.mass)} M☉`;
-  const mass=sim.state==='ready'?0:Math.max(0,...sim.bodies.filter(b=>b.kind==='bh').map(b=>b.mass));$('bh-mass').textContent=massText(mass);$('mass-progress').style.width=`${clamp(mass/PHYSICS.winningMass*100,0,100)}%`;
-  $('field-status').textContent=t('status.'+sim.state);$('body-count').textContent=t('bodies',{n:sim.bodies.length});
+  const sandbox=sim.mode==='sandbox'&&sim.state!=='ready',free=sim.mode!=='classic'&&sim.state!=='ready';
+  if(sandbox){const item=SANDBOX[sandboxChoice],spec=sim.specFor(item.spec);$('next-type').textContent=item.label.replace(/ \d+$/,'');$('next-type').style.setProperty('--c',item.color);$('next-mass').textContent=`${massText(spec.mass)} M☉`;}
+  else{const next=STAR_TYPES[sim.nextType];$('next-type').textContent=next.type;$('next-type').style.setProperty('--c',next.color);$('next-mass').textContent=`${massText(next.mass)} M☉`;}
+  renderer.sandboxSpec=sandbox?SANDBOX[sandboxChoice].spec:null;$('game').classList.toggle('sandbox',sandbox);$('sandbox-bar').hidden=!sandbox;if(sandbox&&!$('sandbox-bar').children.length)buildSandbox();
+  const mass=sim.state==='ready'?0:Math.max(0,...sim.bodies.filter(b=>b.kind==='bh').map(b=>b.mass));$('bh-mass').textContent=massText(mass);$('mass-progress').style.width=free?'100%':`${clamp(mass/PHYSICS.winningMass*100,0,100)}%`;
+  $('mass-track').classList.toggle('endless',free);$('goal-of').textContent=free?` · ${t(sandbox?'sandboxTag':'endlessTag')}`:` / ${PHYSICS.winningMass} M☉`;$('start-sandbox').hidden=!sandboxUnlocked;
+  $('field-status').textContent=t(sim.state==='playing'&&free?(sandbox?'status.sandbox':'status.endless'):'status.'+sim.state);$('body-count').textContent=t('bodies',{n:sim.bodies.length});
   $('ready-overlay').hidden=sim.state!=='ready';$('pause').disabled=!['playing','paused'].includes(sim.state);$('pause').innerHTML=sim.state==='paused'?icon('play',t('resume')):icon('pause',t('pause'));$('pause').setAttribute('aria-label',t(sim.state==='paused'?'resumeAria':'pauseAria'));
   $('danger').hidden=sim.state!=='playing'||sim.danger<.12;
   const cinema=sim.state==='won'&&!renderer.isCinematicDone;$('cinema-caption').hidden=!cinema;$('state-overlay').hidden=!['paused','lost'].includes(sim.state)&&!(sim.state==='won'&&!cinema);
-  if(!$('state-overlay').hidden){const paused=sim.state==='paused',won=sim.state==='won';$('state-title').textContent=t(paused?'paused':won?'won':'lost');$('state-detail').textContent=t(paused?'pausedDetail':won?'wonDetail':'lostDetail');$('state-action').textContent=t(paused?'resume':'playAgain');$('end-stats').className='end-stats';$('end-stats').innerHTML=paused?'':`<div><span>${t('score')}</span><strong>${Math.floor(sim.score).toLocaleString('en-US')}</strong></div><div><span>${t('time')}</span><strong>${timeText(sim.time)}</strong></div>${won?`<div><span>${t('timeBonus')}</span><strong>+${sim.stats.timeBonus}</strong></div>`:''}`;}
-  if(sim.state==='won'&&!wonBefore){selectedId=null;$('body-info').hidden=true;wonBefore=true;}updateInfo();
+  if(!$('state-overlay').hidden){const paused=sim.state==='paused',won=sim.state==='won';$('state-title').textContent=t(paused?'paused':won?'won':'lost');$('state-detail').textContent=t(paused?'pausedDetail':won?'wonDetail':'lostDetail');$('state-action').textContent=t(paused?'resume':'playAgain');$('won-actions').hidden=!won;$('end-stats').className='end-stats';$('end-stats').innerHTML=paused?'':`<div><span>${t('score')}</span><strong>${Math.floor(sim.score).toLocaleString('en-US')}</strong></div><div><span>${t('time')}</span><strong>${timeText(sim.time)}</strong></div>${won?`<div><span>${t('timeBonus')}</span><strong>+${sim.stats.timeBonus}</strong></div>`:''}`;}
+  if(sim.state==='won'&&!wonBefore){selectedId=null;$('body-info').hidden=true;wonBefore=true;sandboxUnlocked=true;try{localStorage.setItem(storageKey+'-sandbox','1');}catch{}}updateInfo();
 }
 let previous=performance.now(),accumulator=0,lastUi=0;
 function frame(now){const dt=Math.min(.1,(now-previous)/1000);previous=now;if(sim.state==='playing'&&mode==='drop')hold.update(dt);else hold.cancel();if(sim.state==='playing'||sim.state==='won'){accumulator+=dt;while(accumulator>=1/60){sim.update(1/60);accumulator-=1/60;}}else accumulator=0;renderer.render(sim.state==='paused'?0:dt);if(now-lastUi>150){lastUi=now;updateUi();}requestAnimationFrame(frame);}

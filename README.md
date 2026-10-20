@@ -15,9 +15,15 @@ Runs in any modern browser, desktop or mobile. English by default; 中文 is ava
 - **Compact objects:**
   - Black holes, neutron stars and white dwarfs feed on a star they touch.
   - When two of them meet, they spiral together for 5 seconds and merge. This works for two black holes, two neutron stars, or a black hole with a neutron star or a white dwarf.
-- **Win:** grow a black hole to **500 M☉**.
+- **Win:** grow a black hole to **200 M☉**. After the ending you can keep playing the same board in **Endless** mode (no goal, no upper limit on black hole mass) or open the **Sandbox**.
 - **Lose:** stars stay above the danger line for 3 seconds.
 - **Inspect:** this mode shows any body's mass and its element layers, which change as a star ages.
+
+### Modes
+
+- **Classic:** reach 200 M☉ to win.
+- **Endless:** no goal; black holes grow without limit. Start it from the title screen or continue after a win.
+- **Sandbox:** unlocked by your first win. Pick any star class, white dwarf, neutron star or black hole from the palette and place it anywhere. There is no win or loss.
 
 ## Run locally
 

@@ -296,11 +296,48 @@ test('neutron-star accretion never forms a black hole; excess mass is ejected', 
   assert.ok(Math.abs(neutron.mass+donor.mass+sim.stats.ejected-total)<1e-9);
 });
 
-test('the win threshold is 500 solar masses and 40 no longer wins', () => {
+test('the win threshold is 200 solar masses and 40 no longer wins', () => {
   const {sim}=game();const hole=body(sim,'bh',6,330,500,40);sim._checkVictory();
-  assert.equal(sim.state,'playing');assert.equal(sim.winningMass,500);
-  hole.mass=499.99;sim._checkVictory();assert.equal(sim.state,'playing');
-  hole.mass=500;sim._checkVictory();assert.equal(sim.state,'won');
+  assert.equal(sim.state,'playing');assert.equal(sim.winningMass,200);
+  hole.mass=199.99;sim._checkVictory();assert.equal(sim.state,'playing');
+  hole.mass=200;sim._checkVictory();assert.equal(sim.state,'won');
+});
+
+test('after winning, endless play resumes the exact board and never ends at the goal', () => {
+  const { sim } = game();
+  body(sim, 'bh', 6, 330, 700, 200); body(sim, 'star', 2, 520, 760); body(sim, 'star', 1, 140, 760);
+  sim.update(1 / 60);
+  assert.equal(sim.state, 'won');
+  const before = sim.bodies.map(value => [value.id, value.kind, value.mass]);
+  advance(sim, 10);
+  assert.notDeepEqual(sim.bodies.map(value => value.id), before.map(value => value[0]), 'the finale changed the board');
+  assert.ok(sim.continueAfterWin('endless'));
+  assert.equal(sim.state, 'playing'); assert.equal(sim.mode, 'endless');
+  assert.deepEqual(sim.bodies.map(value => [value.id, value.kind, value.mass]), before);
+  sim.bodies[0].mass = 5000;
+  advance(sim, .5);
+  assert.equal(sim.state, 'playing', 'no upper bound: a 5000 M☉ hole keeps playing');
+  assert.ok(sim.bodies[0].mass >= 5000);
+});
+
+test('sandbox places any body, with no win and no loss', () => {
+  const { sim } = game();
+  sim.restart(); sim.start('sandbox');
+  assert.equal(sim.bodies.length, 0, 'sandbox starts empty');
+  const placed = [];
+  for (const spec of [{ kind: 'star', type: 0 }, { kind: 'star', type: 6, sub: 2 }, { kind: 'wd' }, { kind: 'ns' }, { kind: 'bh', mass: 250 }]) {
+    advance(sim, .3);
+    placed.push(sim.place(spec, 330));
+  }
+  assert.deepEqual(placed.map(value => value.kind), ['star', 'star', 'wd', 'ns', 'bh']);
+  assert.equal(placed[1].mass, 64);
+  assert.equal(placed[4].mass, 250);
+  advance(sim, 1);
+  assert.equal(sim.state, 'playing', 'a 250 M☉ hole does not win in the sandbox');
+  for (let i = 0; i < 30; i++) { advance(sim, .25); sim.place({ kind: 'star', type: 6, sub: 1 }, 100 + (i % 5) * 120); }
+  advance(sim, 6);
+  assert.equal(sim.state, 'playing', 'an overfull sandbox never loses');
+  assert.equal(game().sim.place({ kind: 'bh' }, 300), null, 'placing is sandbox-only');
 });
 
 test('softened gravity approaches inverse-square falloff and is finite at the origin', () => {
